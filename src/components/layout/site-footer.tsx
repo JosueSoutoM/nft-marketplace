@@ -1,5 +1,6 @@
 import type { ComponentType, FormEvent, ReactNode, SVGProps } from 'react'
 import { Link } from '@tanstack/react-router'
+import type { NftCategoryId } from '@/api/contracts'
 import {
   FacebookIcon,
   InstagramIcon,
@@ -43,7 +44,13 @@ const HELP_LINKS = [
 
 const PROFILE_COMING_SOON = ['Minha coleção', 'Atividade', 'Estúdio do criador', 'Lista de interesse']
 
-const COLLECTIONS = ['Arte digital', 'Fotografia', 'Música', 'Arte 3D', 'Utilidade']
+const COLLECTIONS: Array<{ label: string; category: NftCategoryId }> = [
+  { label: 'Arte digital', category: 'digital-art' },
+  { label: 'Fotografia', category: 'photography' },
+  { label: 'Música', category: 'music' },
+  { label: 'Arte 3D', category: '3d-art' },
+  { label: 'Utilidade', category: 'utility' },
+]
 
 const SOCIAL_NETWORKS: Array<{ name: string; icon: ComponentType<SVGProps<SVGSVGElement>> }> = [
   { name: 'Facebook', icon: FacebookIcon },
@@ -185,9 +192,9 @@ function FooterLinks() {
       </FooterColumn>
 
       <FooterColumn title="Coleções">
-        {COLLECTIONS.map((label) => (
+        {COLLECTIONS.map(({ label, category }) => (
           <li key={label}>
-            <Link to="/" hash={CATALOG_HASH} className={footerLinkClass}>
+            <Link to="/" search={{ category: [category] }} hash={CATALOG_HASH} className={footerLinkClass}>
               {label}
             </Link>
           </li>

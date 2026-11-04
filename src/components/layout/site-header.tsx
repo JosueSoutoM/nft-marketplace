@@ -1,9 +1,10 @@
 import { Link } from '@tanstack/react-router'
-import { LogIn, Search, ShoppingCart } from 'lucide-react'
+import { LogIn, ShoppingCart } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { ComingSoonButton } from './coming-soon'
 import { Container } from './container'
+import { HeaderSearch } from './header-search'
 import { Logo } from './logo'
 import { CATALOG_HASH, useActiveSection } from './use-active-section'
 import { useLoginRedirect } from './use-login-redirect'
@@ -61,9 +62,7 @@ export function SiteHeader() {
         </nav>
 
         <div className="flex items-center gap-2 justify-self-end lg:gap-4">
-          <Link to="/" hash={CATALOG_HASH} aria-label="Buscar NFTs" className={iconLinkClass}>
-            <Search className="size-6" aria-hidden="true" />
-          </Link>
+          <HeaderSearch className={iconLinkClass} />
           <Link
             to="/cart"
             aria-label="Carrinho"

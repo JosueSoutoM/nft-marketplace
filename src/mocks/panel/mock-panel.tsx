@@ -19,8 +19,14 @@ import {
   type ScenarioName,
 } from '../scenarios'
 import { RealtimeTools } from './realtime-tools'
+import { isPanelHidden } from './visibility'
 
 export function MockPanel() {
+  const [hidden] = useState(isPanelHidden)
+  return hidden ? null : <MockPanelContent />
+}
+
+function MockPanelContent() {
   const settings = useSyncExternalStore(subscribeSettings, getSettings)
   const [status, setStatus] = useState('')
   const [resetting, setResetting] = useState(false)
@@ -53,15 +59,20 @@ export function MockPanel() {
   }
 
   return (
-    <div data-mock-panel className="fixed bottom-32 left-3 z-40 md:bottom-4">
+    <div data-mock-panel className="absolute top-1 left-1 z-40">
       <Popover>
         <PopoverTrigger asChild>
-          <Button variant="outline" size="sm" className="bg-background text-body-sm">
-            <FlaskConical aria-hidden="true" className="size-4" />
-            Mocks: {scenario.label}
+          <Button
+            variant="outline"
+            size="icon"
+            aria-label={`Painel de simulação da API (cenário: ${scenario.label})`}
+            title={`Mocks: ${scenario.label}`}
+            className="size-7 rounded-full bg-background"
+          >
+            <FlaskConical aria-hidden="true" className="size-3.5" />
           </Button>
         </PopoverTrigger>
-        <PopoverContent align="start" side="top" className="max-h-[85dvh] w-80 gap-4 overflow-y-auto">
+        <PopoverContent align="start" side="bottom" className="max-h-[85dvh] w-80 gap-4 overflow-y-auto">
           <PopoverHeader>
             <PopoverTitle>Simulação da API</PopoverTitle>
             <PopoverDescription>Cenários e latência aplicados pelo MSW a todas as requisições.</PopoverDescription>

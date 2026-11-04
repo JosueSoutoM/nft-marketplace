@@ -32,3 +32,8 @@ CLAUDE.md
 !.env.production
 
 .tanstack
+
+/test-results
+/playwright-report
+/blob-report
+/playwright/.cache

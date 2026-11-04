@@ -7,6 +7,7 @@ Kurio é um marketplace de NFTs construído como SPA com React, TypeScript e Vit
 ## Estrutura de pastas
 
 ```
+e2e/                      testes Playwright e utilitários de controle dos mocks
 public/
   images/nfts/            imagens dos NFTs em WebP, servidas pela API simulada
   mockServiceWorker.js    service worker do MSW (gerado por `msw init`)
@@ -15,10 +16,14 @@ src/
     contracts/            tipos e constantes compartilhados entre cliente e mocks
   assets/icons/           SVGs otimizados (Google e Facebook)
   components/
+    catalog/              catálogo: busca, filtros, segmentos, ordenação, grade, estados e paginação
+    home/                 seções da tela inicial: banner, NFT em destaque, chamadas e Diário da Cunhagem
     icons/                ícones de redes sociais em SVG inline
-    layout/               header, footer, barra inferior mobile, 404 e utilitários de layout
+    layout/               header (com busca), footer, barra inferior mobile, 404 e utilitários de layout
+    nft/                  componentes de NFT reutilizados entre telas (imagem responsiva)
     ui/                   componentes shadcn/ui adaptados aos tokens
-  lib/                    QueryClient, chaves de query, anunciador aria-live, aritmética de ETH e utilitários
+  hooks/                  hooks de dados (TanStack Query) e do estado do catálogo na URL
+  lib/                    QueryClient, search params do catálogo, chaves de query, anunciador aria-live, aritmética de ETH e utilitários
   mocks/                  API simulada (MSW): banco, fixtures, cenários, handlers, servidor Socket.IO e painel
   realtime/               cliente Socket.IO, aplicação de eventos no cache e estado da conexão
   routes/                 rotas do TanStack Router (uma rota por arquivo)
@@ -45,6 +50,7 @@ src/
 | qualquer outro | `notFoundComponent` da raiz | Página não encontrada | Público |
 
 - As rotas privadas ficam sob o layout `_authenticated`, que não altera a URL. A proteção será implementada nesse layout.
+- `/` guarda o estado do catálogo na URL (ver "Estado do catálogo na URL").
 - `/login` aceita o search param `redirect`. Apenas caminhos internos são aceitos (iniciados por `/` e não por `//`); qualquer outro valor é descartado. O botão "Entrar" do header envia a URL atual como `redirect`.
 - `staticData.hideMobileTabBar` oculta a barra inferior no mobile nas telas que, no Figma, têm barra de ação própria ou ocupam a tela inteira: detalhes, carrinho, pagamento, login e cadastro.
 - O acesso direto e o refresh funcionam em qualquer rota: no desenvolvimento e no preview pelo fallback de SPA do Vite, e na Vercel pelo rewrite de `vercel.json`.
@@ -273,9 +279,47 @@ Parte implementada até aqui (as telas e hooks de sessão virão nas próximas t
 
 _A preencher._
 
+## Estado do catálogo na URL
+
+A rota `/` valida os search params em `src/lib/catalog-search.ts` (`validateCatalogSearch`), sem biblioteca de validação: são poucos campos, todos com listas fechadas ou formatos já cobertos por `src/lib/eth.ts`.
+
+| Parâmetro | Valores | Padrão | Valor inválido |
+| --- | --- | --- | --- |
+| `q` | texto, aparado, até 100 caracteres | `''` | cortado no limite |
+| `category` | lista de categorias | `[]` | valores desconhecidos são descartados |
+| `network` | lista de redes | `[]` | valores desconhecidos são descartados |
+| `priceMin`, `priceMax` | string ETH não negativa (aceita vírgula) | ausente | descartado; se o mínimo for maior que o máximo, os dois são descartados |
+| `segment` | `all`, `new`, `trending` | `all` | volta ao padrão |
+| `sort` | `recent`, `price-asc`, `price-desc`, `name-asc`, `rating-desc` | `recent` | volta ao padrão |
+| `page` | inteiro de 1 a 10 000 | `1` | volta a 1 |
+| `favorites` | `true` ou `false` | `false` | volta a `false` |
+
+- `favorites` está reservado para a tarefa de favoritos: já é validado e preservado na URL, mas ainda não altera a lista nem é enviado à API.
+
+- O middleware `stripSearchParams` remove da URL os valores iguais ao padrão.
+- Listas são escritas com valores separados por vírgula (`?category=photography,music&network=ethereum`). O router usa `parseSearch` e `stringifySearch` próprios (`src/lib/search-serialization.ts`): arrays de strings viram `a,b` e a vírgula não é codificada como `%2C`; os demais valores seguem a serialização JSON padrão do TanStack Router. Na leitura, o validador separa os valores pela vírgula. URLs antigas em JSON (`?category=["music"]`) continuam aceitas e passam ao formato novo na próxima navegação. Os valores de categoria e rede nunca contêm vírgula.
+- O validador sempre devolve todas as chaves, inclusive `priceMin` e `priceMax` como `undefined`: o router mescla o resultado com os parâmetros crus da URL, e uma chave omitida manteria o valor inválido.
+- As listas são normalizadas na ordem do contrato, então a mesma seleção gera sempre a mesma chave de cache, qualquer que seja a ordem dos cliques.
+- Busca, filtros, segmento e ordenação reiniciam `page` para 1. Cada mudança cria uma entrada no histórico, assim voltar e avançar restauram a lista; a paginação também.
+- Busca: o campo atualiza a URL 350 ms depois da última tecla. A primeira atualização de uma sessão de digitação (desde o foco) cria uma entrada no histórico e as seguintes a substituem (`replace`), então digitar uma palavra produz uma única entrada. Enter aplica na hora e rola até o catálogo. Fora da tela inicial (busca do header), só o Enter navega, para `/?q=…#catalogo`.
+- No desktop e no tablet a busca fica no ícone do header (popover); no mobile, no campo "Explorar coleções" do topo da tela, como no Figma. A busca ativa aparece acima da grade ("Resultados para …") com a ação "Limpar busca".
+
 ## Estratégia de cache, retries e sincronização
 
-_A preencher._
+### Padrões globais (`src/lib/query-client.ts`)
+
+- `retry`: até 2 novas tentativas, apenas para falhas transitórias (`ApiError.isTransient`: rede, timeout ou 5xx). Erros 4xx não são repetidos, porque a repetição daria o mesmo resultado.
+- `retryDelay`: exponencial, 1 s e 2 s (máximo de 4 s).
+
+### Catálogo (`src/hooks/use-nft-list.ts`)
+
+- `useNftList(params)` usa a chave `['nfts', 'list', params]`, com os parâmetros exatamente como enviados à API (`toNftListQuery`). Cada combinação tem a sua entrada de cache.
+- O `signal` do TanStack Query é repassado ao Axios. Quando os parâmetros mudam, a query anterior perde o observador e a requisição em andamento é cancelada.
+- Respostas fora de ordem não sobrescrevem o resultado atual: cada resposta é gravada na chave dos seus próprios parâmetros, e a tela só lê a chave dos parâmetros atuais. O teste "keeps the latest parameters when responses arrive out of order" verifica isso com o cenário `variable-latency`.
+- `placeholderData: keepPreviousData`: ao trocar filtros, a lista anterior continua visível, com opacidade reduzida, e um indicador "Atualizando…" aparece sobre a grade sem mudar o layout. A região de resultados recebe `aria-busy`. O mesmo indicador aparece em refetches em segundo plano.
+- `staleTime` de 30 s: voltar a uma combinação recente (histórico, paginação) mostra o cache na hora, sem nova requisição. Preço e estoque não dependem desse prazo, porque chegam pelo `nft.updated`, que atualiza os itens de todas as listas em cache; na reconexão do socket as listas ativas são refeitas.
+- Imagens: a do banner (provável LCP) carrega com `fetchpriority="high"` e sem lazy; a primeira linha da grade carrega sem lazy; as demais imagens da tela usam `loading="lazy"`. Todas têm `width`, `height` e `srcset` com as larguras disponíveis.
+- Destaques: `useFeaturedNfts` consulta `GET /api/nfts?featured=true&sort=recent&pageSize=4` (mesma família de chaves, então também recebe os eventos). O primeiro, o terceiro e o quarto destaques formam o carrossel do banner; o segundo é o "NFT em destaque" da barra lateral. Nenhum NFT é fixo nos componentes.
 
 ## Reconciliação REST × Socket.IO
 
@@ -441,7 +485,9 @@ Os cenários de falha genérica (`network-error`, `server-error`, `service-unava
 
 - Query string: `?scenario=<nome>&latency=<modo>` em qualquer URL. Os valores são aplicados, persistidos e removidos da URL antes de o router iniciar.
 - `localStorage`: chave `kurio.mocks.settings.v1` (`{ scenario, latency, sessionTtlSeconds }`). A escolha sobrevive ao refresh.
-- Painel: botão "Mocks" no canto inferior esquerdo, com seleção de cenário e latência; na seção "Tempo real", o estado do cliente, as conexões vistas pelo servidor, o último evento e as ferramentas do socket; e os botões "Expirar sessões" e "Restaurar dados". Ele só é carregado quando `VITE_ENABLE_MOCKS` é `"true"`, em um chunk separado.
+- Painel: botão redondo de 28 px, só com ícone e nome acessível ("Painel de simulação da API (cenário: …)"), no canto superior esquerdo da página. Ele não é fixo: fica na margem acima do conteúdo (antes do header no desktop e da busca no mobile) e rola junto com a página, então não cobre cards nem a barra inferior em nenhum viewport. Oferece seleção de cenário e latência; na seção "Tempo real", o estado do cliente, as conexões vistas pelo servidor, o último evento e as ferramentas do socket; e os botões "Expirar sessões" e "Restaurar dados". Ele só é carregado quando `VITE_ENABLE_MOCKS` é `"true"`, em um chunk separado.
+- Visibilidade do painel: `?mockPanel=hidden` (ou `visible`) é gravado em `localStorage` (`kurio.mocks.panel`) e removido da URL antes de o router iniciar. Os testes Playwright abrem o app com `mockPanel=hidden` por padrão (`openApp` em `e2e/support/mocks.ts`), para que o painel não apareça nas capturas de regressão visual; um teste usa `mockPanel: 'visible'` para verificar que o botão não sobrepõe conteúdo.
+- O worker do MSW inicia com `quiet: true`, sem registrar cada requisição no console.
 - Testes: `window.__mocks`, disponível somente depois que o service worker assume as requisições:
 
 ```ts
@@ -466,7 +512,17 @@ window.__mocks.getRealtimeStatus()
 
 ## Acessibilidade
 
-_A preencher._
+### Tela inicial
+
+- O título do banner é o `h1`; catálogo, filtros, NFT em destaque, chamadas e Diário da Cunhagem são seções com títulos.
+- Filtros (categorias e redes) e segmentos são botões com `aria-pressed`. O estado ativo também muda o peso da fonte, não só a cor. Cada opção informa a contagem ("Música, (6) resultados").
+- Faixa de preço: slider de dois polegares operável pelas setas do teclado, com rótulos "Preço mínimo" e "Preço máximo". O filtro só é aplicado pelo botão "Aplicar".
+- Ordenação: `Select` do shadcn/ui, rotulado por "Ordenar por:".
+- Paginação: `nav` com botões "Página N" e `aria-current="page"` na atual.
+- Quando a busca, os filtros, a ordenação ou a página mudam, a quantidade de resultados é anunciada pela região `aria-live` global ("2 NFTs encontrados.", com a página quando há mais de uma). A carga inicial não é anunciada.
+- Erro do catálogo: `role="alert"` com a mensagem da API e o botão "Tentar novamente".
+- Drawer de filtros (abaixo de 1024 px): `Dialog` do Radix (Sheet do shadcn/ui), com foco preso, Esc para fechar e retorno do foco ao botão que o abriu.
+- Skeletons têm `aria-hidden` e as mesmas dimensões dos cards (verificado no teste de carregamento lento). Com `prefers-reduced-motion`, o brilho é removido e o skeleton fica estático.
 
 ## Desvios do Figma e decisões de UX
 
@@ -493,7 +549,7 @@ E-mail e telefone de contato do rodapé são fictícios e aparecem como texto, s
 - Mobile: não há header global, como no Figma. A navegação fica na barra inferior (Início, Favoritos, botão central, Carrinho e Perfil). Detalhes, carrinho e pagamento exibem botão de voltar ao lado do título, também como no Figma.
 - Tablet (768 px): não há frame. É usado o header desktop, com espaçamento reduzido entre os itens de navegação; a barra inferior aparece apenas abaixo de 768 px.
 - O item ativo do header segue a seção: "Início" na tela inicial e "Mercado" no catálogo, detalhes, carrinho, pagamento e pedidos. Nos frames de perfil e carteiras o Figma marca "Início"; aqui nenhum item fica ativo nessas telas.
-- "Mercado", o ícone de busca e os links de "Coleções" do rodapé levam à seção de catálogo da tela inicial (`/#catalogo`). Busca e filtro por coleção serão ligados aos search params na tarefa do catálogo.
+- "Mercado" leva à seção de catálogo da tela inicial (`/#catalogo`). O ícone de busca do header abre um campo de busca (popover) que leva ao catálogo com `q`. Os links de "Coleções" do rodapé aplicam o filtro de categoria correspondente.
 - O contador do carrinho no header só será exibido com dados reais do carrinho; o valor fixo do Figma não é reproduzido.
 - O ícone do botão central da barra mobile usa a cor Ink em vez de branco: branco sobre o laranja tem contraste de 2,45:1, abaixo do mínimo de 3:1 para elementos gráficos.
 - O rodapé não aparece nos frames mobile, que mostram apenas a primeira tela. No mobile e no tablet as colunas são reorganizadas em uma ou duas colunas.
@@ -502,6 +558,13 @@ E-mail e telefone de contato do rodapé são fictícios e aparecem como texto, s
 
 - Categoria e coleção são campos distintos. A barra lateral do Figma chama de "Coleções" a lista Arte digital, Fotografia, Música etc.; na API essas opções são categorias (`category`). A coleção (`collection`, por exemplo "Kurio Apes") é a que aparece no detalhe ("Coleção: Kurio Apes") e alimenta "Mais desta coleção".
 - O Figma mostra apenas a ordenação "Listados recentemente" (`recent`). As ordenações preço crescente (`price-asc`), preço decrescente (`price-desc`), nome (`name-asc`) e avaliação (`rating-desc`) foram acrescentadas.
+- O Figma desktop mostra só a página 1, com os botões 1 a 4 e "próxima". A paginação mostra a primeira e a última página, a atual e as vizinhas, com reticências, e o botão "anterior" a partir da página 2.
+- Estados sem frame (vazio, erro, página inexistente, atualização em segundo plano, "Limpar filtros", "Esgotado") seguem os tokens do Figma: superfície Surface Card, títulos em Foreground e ações com o botão primário.
+- No mobile os cards mostram o selo de raridade ("Raro", "Lendário") como no frame; no desktop o Figma não o mostra. A grade mobile tem a segunda coluna deslocada para baixo, como no frame.
+- Abaixo de 1024 px a barra lateral de filtros vira um drawer, aberto pelo botão de filtros ao lado da busca (mobile, como no Figma) ou pelo botão "Filtros" da barra de ordenação (tablet). O "NFT em destaque" só aparece com a barra lateral (a partir de 1024 px); abaixo disso os destaques ficam no banner.
+- No frame do Figma o texto da segunda chamada ("Arte digital selecionada…") aparece cortado; aqui ele é exibido inteiro.
+- As chamadas "Lançamentos gênesis" e "Arte digital selecionada" levam ao catálogo com `segment=new` e `category=digital-art`. O Diário da Cunhagem é editorial e fora do escopo: o conteúdo é fixo e "Ler mais" segue o padrão "em breve".
+- No mobile o banner mostra uma miniatura do próximo destaque sobre a imagem principal, como no frame. Os pontos do carrossel são botões que trocam o destaque; não há troca automática.
 - O preço exibido no card é o da edição `1/50`, que é a edição padrão. Os preços das demais edições derivam dele: `1/1` = 5×, `1/10` = 2× e `Aberta` = 50%. A edição `Aberta` tem estoque inteiro de 1000 unidades.
 
 ### Substituição de assets

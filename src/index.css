@@ -125,7 +125,31 @@
     outline-offset: 2px;
   }
 
+  .skeleton-shimmer {
+    position: relative;
+    overflow: hidden;
+  }
+
+  .skeleton-shimmer::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    transform: translateX(-100%);
+    background: linear-gradient(90deg, transparent, rgb(247 243 236 / 0.08), transparent);
+    animation: skeleton-shimmer 1.6s ease-in-out infinite;
+  }
+
+  @keyframes skeleton-shimmer {
+    to {
+      transform: translateX(100%);
+    }
+  }
+
   @media (prefers-reduced-motion: reduce) {
+    .skeleton-shimmer::after {
+      display: none;
+    }
+
     *,
     *::before,
     *::after {
