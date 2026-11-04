@@ -37,3 +37,6 @@ CLAUDE.md
 /playwright-report
 /blob-report
 /playwright/.cache
+
+/.lighthouseci
+/lighthouse/.build

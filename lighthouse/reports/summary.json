@@ -1,0 +1,422 @@
+{
+  "generatedAt": "2026-11-04T17:13:10.965Z",
+  "node": "v24.20.0",
+  "results": [
+    {
+      "profile": "mobile",
+      "path": "/",
+      "runs": 3,
+      "categories": {
+        "performance": {
+          "median": 82,
+          "runs": [
+            82,
+            80,
+            82
+          ]
+        },
+        "accessibility": {
+          "median": 100,
+          "runs": [
+            100,
+            100,
+            100
+          ]
+        },
+        "best-practices": {
+          "median": 100,
+          "runs": [
+            100,
+            100,
+            100
+          ]
+        },
+        "seo": {
+          "median": 100,
+          "runs": [
+            100,
+            100,
+            100
+          ]
+        }
+      },
+      "metrics": {
+        "first-contentful-paint": {
+          "median": 916.8389999999999,
+          "runs": [
+            915.3118,
+            936.9697000000001,
+            916.8389999999999
+          ]
+        },
+        "largest-contentful-paint": {
+          "median": 4455.017,
+          "runs": [
+            4451.435399999999,
+            4572.878799999999,
+            4455.017
+          ]
+        },
+        "cumulative-layout-shift": {
+          "median": 0,
+          "runs": [
+            0,
+            0,
+            0
+          ]
+        },
+        "total-blocking-time": {
+          "median": 172,
+          "runs": [
+            172,
+            233.9999999999991,
+            163
+          ]
+        },
+        "speed-index": {
+          "median": 1711.7544009594963,
+          "runs": [
+            1546.2228754531134,
+            1718.823002202725,
+            1711.7544009594963
+          ]
+        }
+      },
+      "environment": {
+        "lighthouse": "13.6.0",
+        "chrome": "156.0.0.0",
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36",
+        "benchmarkIndex": 2731,
+        "formFactor": "mobile",
+        "throttlingMethod": "simulate",
+        "throttling": {
+          "rttMs": 150,
+          "throughputKbps": 1638.4,
+          "requestLatencyMs": 562.5,
+          "downloadThroughputKbps": 1474.5600000000002,
+          "uploadThroughputKbps": 675,
+          "cpuSlowdownMultiplier": 4
+        },
+        "screenEmulation": {
+          "mobile": true,
+          "width": 412,
+          "height": 823,
+          "deviceScaleFactor": 1.75,
+          "disabled": false
+        }
+      }
+    },
+    {
+      "profile": "mobile",
+      "path": "/nfts/emerald-ape-042",
+      "runs": 3,
+      "categories": {
+        "performance": {
+          "median": 83,
+          "runs": [
+            83,
+            83,
+            83
+          ]
+        },
+        "accessibility": {
+          "median": 100,
+          "runs": [
+            100,
+            100,
+            100
+          ]
+        },
+        "best-practices": {
+          "median": 100,
+          "runs": [
+            100,
+            100,
+            100
+          ]
+        },
+        "seo": {
+          "median": 100,
+          "runs": [
+            100,
+            100,
+            100
+          ]
+        }
+      },
+      "metrics": {
+        "first-contentful-paint": {
+          "median": 917.2330999999999,
+          "runs": [
+            916.4908,
+            1079.1091,
+            917.2330999999999
+          ]
+        },
+        "largest-contentful-paint": {
+          "median": 4418.932400000001,
+          "runs": [
+            4415.963199999998,
+            4505.436399999999,
+            4418.932400000001
+          ]
+        },
+        "cumulative-layout-shift": {
+          "median": 0,
+          "runs": [
+            0,
+            0,
+            0
+          ]
+        },
+        "total-blocking-time": {
+          "median": 142,
+          "runs": [
+            142,
+            118,
+            142
+          ]
+        },
+        "speed-index": {
+          "median": 1627.341735461739,
+          "runs": [
+            1682.2412321191873,
+            1627.341735461739,
+            1490.1536886149324
+          ]
+        }
+      },
+      "environment": {
+        "lighthouse": "13.6.0",
+        "chrome": "156.0.0.0",
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36",
+        "benchmarkIndex": 2777,
+        "formFactor": "mobile",
+        "throttlingMethod": "simulate",
+        "throttling": {
+          "rttMs": 150,
+          "throughputKbps": 1638.4,
+          "requestLatencyMs": 562.5,
+          "downloadThroughputKbps": 1474.5600000000002,
+          "uploadThroughputKbps": 675,
+          "cpuSlowdownMultiplier": 4
+        },
+        "screenEmulation": {
+          "mobile": true,
+          "width": 412,
+          "height": 823,
+          "deviceScaleFactor": 1.75,
+          "disabled": false
+        }
+      }
+    },
+    {
+      "profile": "desktop",
+      "path": "/",
+      "runs": 3,
+      "categories": {
+        "performance": {
+          "median": 99,
+          "runs": [
+            99,
+            99,
+            99
+          ]
+        },
+        "accessibility": {
+          "median": 100,
+          "runs": [
+            100,
+            100,
+            100
+          ]
+        },
+        "best-practices": {
+          "median": 100,
+          "runs": [
+            100,
+            100,
+            100
+          ]
+        },
+        "seo": {
+          "median": 100,
+          "runs": [
+            100,
+            100,
+            100
+          ]
+        }
+      },
+      "metrics": {
+        "first-contentful-paint": {
+          "median": 257.932,
+          "runs": [
+            253.4212,
+            257.932,
+            260.5149
+          ]
+        },
+        "largest-contentful-paint": {
+          "median": 999.2872500000001,
+          "runs": [
+            981.553,
+            1009.8300000000002,
+            999.2872500000001
+          ]
+        },
+        "cumulative-layout-shift": {
+          "median": 0,
+          "runs": [
+            0,
+            0,
+            0
+          ]
+        },
+        "total-blocking-time": {
+          "median": 0,
+          "runs": [
+            0,
+            5,
+            0
+          ]
+        },
+        "speed-index": {
+          "median": 516.2894758986689,
+          "runs": [
+            501.34989769283004,
+            687.0429854474417,
+            516.2894758986689
+          ]
+        }
+      },
+      "environment": {
+        "lighthouse": "13.6.0",
+        "chrome": "156.0.0.0",
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36",
+        "benchmarkIndex": 2782.5,
+        "formFactor": "desktop",
+        "throttlingMethod": "simulate",
+        "throttling": {
+          "rttMs": 40,
+          "throughputKbps": 10240,
+          "requestLatencyMs": 0,
+          "downloadThroughputKbps": 0,
+          "uploadThroughputKbps": 0,
+          "cpuSlowdownMultiplier": 1
+        },
+        "screenEmulation": {
+          "mobile": false,
+          "width": 1350,
+          "height": 940,
+          "deviceScaleFactor": 1,
+          "disabled": false
+        }
+      }
+    },
+    {
+      "profile": "desktop",
+      "path": "/nfts/emerald-ape-042",
+      "runs": 3,
+      "categories": {
+        "performance": {
+          "median": 99,
+          "runs": [
+            99,
+            99,
+            99
+          ]
+        },
+        "accessibility": {
+          "median": 100,
+          "runs": [
+            100,
+            100,
+            100
+          ]
+        },
+        "best-practices": {
+          "median": 100,
+          "runs": [
+            100,
+            100,
+            100
+          ]
+        },
+        "seo": {
+          "median": 100,
+          "runs": [
+            100,
+            100,
+            100
+          ]
+        }
+      },
+      "metrics": {
+        "first-contentful-paint": {
+          "median": 256.8809,
+          "runs": [
+            259.589,
+            256.5099,
+            256.8809
+          ]
+        },
+        "largest-contentful-paint": {
+          "median": 942.2022500000003,
+          "runs": [
+            959.1779999999997,
+            941.27475,
+            942.2022500000003
+          ]
+        },
+        "cumulative-layout-shift": {
+          "median": 0,
+          "runs": [
+            0,
+            0,
+            0
+          ]
+        },
+        "total-blocking-time": {
+          "median": 0,
+          "runs": [
+            0,
+            0,
+            0
+          ]
+        },
+        "speed-index": {
+          "median": 456.038799133877,
+          "runs": [
+            456.038799133877,
+            442.01408972816466,
+            504.2869939510605
+          ]
+        }
+      },
+      "environment": {
+        "lighthouse": "13.6.0",
+        "chrome": "156.0.0.0",
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36",
+        "benchmarkIndex": 2731,
+        "formFactor": "desktop",
+        "throttlingMethod": "simulate",
+        "throttling": {
+          "rttMs": 40,
+          "throughputKbps": 10240,
+          "requestLatencyMs": 0,
+          "downloadThroughputKbps": 0,
+          "uploadThroughputKbps": 0,
+          "cpuSlowdownMultiplier": 1
+        },
+        "screenEmulation": {
+          "mobile": false,
+          "width": 1350,
+          "height": 940,
+          "deviceScaleFactor": 1,
+          "disabled": false
+        }
+      }
+    }
+  ]
+}

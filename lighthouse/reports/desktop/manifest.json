@@ -1,0 +1,80 @@
+[
+  {
+    "url": "http://localhost:4180/",
+    "isRepresentativeRun": false,
+    "htmlPath": "home-2026_11_04_17_11_31.report.html",
+    "jsonPath": "home-2026_11_04_17_11_31.report.json",
+    "summary": {
+      "performance": 0.99,
+      "accessibility": 1,
+      "best-practices": 1,
+      "seo": 1,
+      "agentic-browsing": 0.5
+    }
+  },
+  {
+    "url": "http://localhost:4180/",
+    "isRepresentativeRun": false,
+    "htmlPath": "home-2026_11_04_17_12_10.report.html",
+    "jsonPath": "home-2026_11_04_17_12_10.report.json",
+    "summary": {
+      "performance": 0.99,
+      "accessibility": 1,
+      "best-practices": 1,
+      "seo": 1,
+      "agentic-browsing": 0.5
+    }
+  },
+  {
+    "url": "http://localhost:4180/nfts/emerald-ape-042",
+    "isRepresentativeRun": false,
+    "htmlPath": "nfts_emerald_ape_042-2026_11_04_17_12_42.report.html",
+    "jsonPath": "nfts_emerald_ape_042-2026_11_04_17_12_42.report.json",
+    "summary": {
+      "performance": 0.99,
+      "accessibility": 1,
+      "best-practices": 1,
+      "seo": 1,
+      "agentic-browsing": 0.5
+    }
+  },
+  {
+    "url": "http://localhost:4180/nfts/emerald-ape-042",
+    "isRepresentativeRun": false,
+    "htmlPath": "nfts_emerald_ape_042-2026_11_04_17_12_56.report.html",
+    "jsonPath": "nfts_emerald_ape_042-2026_11_04_17_12_56.report.json",
+    "summary": {
+      "performance": 0.99,
+      "accessibility": 1,
+      "best-practices": 1,
+      "seo": 1,
+      "agentic-browsing": 0.5
+    }
+  },
+  {
+    "url": "http://localhost:4180/",
+    "isRepresentativeRun": true,
+    "htmlPath": "home-2026_11_04_17_11_45.report.html",
+    "jsonPath": "home-2026_11_04_17_11_45.report.json",
+    "summary": {
+      "performance": 0.99,
+      "accessibility": 1,
+      "best-practices": 1,
+      "seo": 1,
+      "agentic-browsing": 0.5
+    }
+  },
+  {
+    "url": "http://localhost:4180/nfts/emerald-ape-042",
+    "isRepresentativeRun": true,
+    "htmlPath": "nfts_emerald_ape_042-2026_11_04_17_12_27.report.html",
+    "jsonPath": "nfts_emerald_ape_042-2026_11_04_17_12_27.report.json",
+    "summary": {
+      "performance": 0.99,
+      "accessibility": 1,
+      "best-practices": 1,
+      "seo": 1,
+      "agentic-browsing": 0.5
+    }
+  }
+]

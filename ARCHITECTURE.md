@@ -846,6 +846,7 @@ window.__mocks.getRealtimeStatus()
 
 ### Tela inicial
 
+- Os pontos do carrossel do hero são botões de 24 × 24 px (WCAG 2.5.8) em volta do ponto visual de 8 px. A distância entre os centros passou de 20 px para 24 px.
 - O título do banner é o `h1`; catálogo, filtros, NFT em destaque, chamadas e Diário da Cunhagem são seções com títulos.
 - Filtros (categorias e redes) e segmentos são botões com `aria-pressed`. O estado ativo também muda o peso da fonte, não só a cor. Cada opção informa a contagem ("Música, (6) resultados").
 - Faixa de preço: slider de dois polegares operável pelas setas do teclado, com rótulos "Preço mínimo" e "Preço máximo". O filtro só é aplicado pelo botão "Aplicar".
@@ -995,6 +996,19 @@ E-mail e telefone de contato do rodapé são fictícios e aparecem como texto, s
 - SVGs do Google, do Facebook e o ícone "THANK YOU" da confirmação de pedido: otimizados com `svgo` 4.1.0 via `npx` e salvos em `src/assets/icons/` (o do pedido caiu de 1,9 KB para 1,2 KB). O ícone da confirmação é o original do Figma (`thank-you.svg`), usado como `<img>` com `alt=""`: é decorativo, e o título logo abaixo ("Seus NFTs agora estão na sua carteira") já transmite o resultado.
 - Ícones de redes sociais: não foram fornecidos. Instagram, Twitter e YouTube vêm do Bootstrap Icons 1.13.2 (licença MIT). O ícone do LinkedIn usa apenas o glifo "in" desse pacote, como no Figma. O Facebook reutiliza o glifo do SVG fornecido.
 - Fonte: Roboto Mono servida localmente pelo pacote `@fontsource-variable/roboto-mono` (licença OFL), sem Google Fonts.
+
+## Performance e Lighthouse
+
+A auditoria (`npm run audit:lighthouse`) usa o `@lhci/cli` com a configuração em `lighthouse/`. Ela cobre `/` e `/nfts/emerald-ape-042`, nos perfis mobile e desktop, com três execuções cada, sobre o build de produção com os mocks ativos e servido por `vite preview` na porta 4180. Resultados completos em [`lighthouse/RESULTS.md`](lighthouse/RESULTS.md).
+
+Medianas: Accessibility, Best Practices e SEO em 100 nas quatro combinações. Performance em 99 no desktop e em 82 (`/`) e 83 (detalhe) no mobile. CLS 0 e TBT até 172 ms. O LCP simulado no mobile é de 4,4 s porque a imagem de LCP depende de dados da API simulada, e a camada MSW (cerca de 180 KB gzip, com `tough-cookie` e `tldts`) precisa ser baixada e iniciada antes da primeira requisição.
+
+Otimizações do caminho crítico:
+- O plugin `preload-mocks` do `vite.config.ts` emite `modulepreload` dos chunks de `src/mocks/setup.ts` e `src/mocks/browser.ts` quando `VITE_ENABLE_MOCKS=true`, para que baixem junto com o chunk principal.
+- `startMocks` importa `msw/browser` em paralelo ao seed do banco.
+- O `main.tsx` carrega o código dos componentes da rota atual (`router.loadRouteChunk`, sem loaders) em paralelo à inicialização dos mocks.
+- Os cards da primeira linha do catálogo, o destaque do hero e a imagem principal do detalhe usam `loading="eager"` e `fetchpriority="high"`.
+- O `public/robots.txt` evita que o fallback de SPA devolva HTML em `/robots.txt`.
 
 ## Limitações
 
