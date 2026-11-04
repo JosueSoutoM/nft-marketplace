@@ -11,14 +11,15 @@ public/
   images/nfts/            imagens dos NFTs em WebP, servidas pela API simulada
   mockServiceWorker.js    service worker do MSW (gerado por `msw init`)
 src/
-  api/                    cliente Axios e chamadas REST
+  api/                    cliente Axios, ApiError, token da sessão e funções REST por recurso
+    contracts/            tipos e constantes compartilhados entre cliente e mocks
   assets/icons/           SVGs otimizados (Google e Facebook)
   components/
     icons/                ícones de redes sociais em SVG inline
     layout/               header, footer, barra inferior mobile, 404 e utilitários de layout
     ui/                   componentes shadcn/ui adaptados aos tokens
-  lib/                    QueryClient, utilitários e saneamento de redirect
-  mocks/                  worker e handlers do MSW
+  lib/                    QueryClient, aritmética de ETH, utilitários e saneamento de redirect
+  mocks/                  API simulada (MSW): banco, fixtures, cenários, handlers e painel
   routes/                 rotas do TanStack Router (uma rota por arquivo)
     _authenticated/       rotas privadas agrupadas em layout próprio
   index.css               tokens do design system e estilos globais
@@ -49,7 +50,96 @@ src/
 
 ## Contratos REST
 
-_A preencher._
+Os tipos ficam em `src/api/contracts/` e são importados tanto pelo cliente (`src/api/`) quanto pelos handlers do MSW, de modo que transporte e simulação compartilham um único contrato.
+
+### Convenções
+
+- Base `/api` (`VITE_API_URL`). Corpo e respostas em JSON, exceto o upload de avatar (`multipart/form-data`).
+- Sessão: header `Authorization: Bearer <token>`. O token é opaco, gerado aleatoriamente, e expira conforme o TTL da sessão.
+- Carrinho do visitante: header `X-Guest-Cart-Id` com um identificador gerado no cliente. Após o login, `POST /api/cart/merge` incorpora o carrinho do visitante ao do usuário.
+- Pedidos: header `Idempotency-Key` obrigatório em `POST /api/orders`.
+- Valores em ETH são strings decimais (até 18 casas, por exemplo `"1.19"`). Quantidades, estoques e versões são inteiros. Datas em ISO 8601 (UTC).
+- Arrays em query string são enviados repetindo a chave: `?category=music&category=gaming`.
+- Dados privados (favoritos, carrinho, pedidos, perfil, carteiras) nunca aparecem em respostas públicas. O catálogo não traz `isFavorite`; o estado de favorito vem de `GET /api/favorites`, para que o cache público não dependa do usuário.
+
+### Formato de erro
+
+Todas as respostas de erro seguem `{ "error": { "code", "message", "fieldErrors"? } }`.
+
+| Status | Códigos | Uso |
+| --- | --- | --- |
+| 400 | `BAD_REQUEST` | JSON inválido ou query string inválida (com `fieldErrors` por parâmetro) |
+| 401 | `UNAUTHENTICATED`, `SESSION_EXPIRED`, `INVALID_CREDENTIALS` | Sem token ou token desconhecido; sessão expirada; e-mail ou senha incorretos no login |
+| 403 | `FORBIDDEN` | Recurso de outro usuário |
+| 404 | `NOT_FOUND` | Recurso inexistente |
+| 409 | `EMAIL_TAKEN`, `USERNAME_TAKEN`, `AVAILABILITY_CONFLICT`, `QUOTE_OUTDATED`, `IDEMPOTENCY_KEY_REUSED`, `WALLET_CONNECTION_REJECTED` | Conflitos de estado |
+| 413 | `PAYLOAD_TOO_LARGE` | Avatar acima do limite |
+| 422 | `VALIDATION_ERROR`, `COUPON_INVALID`, `COUPON_EXPIRED` | Validação de corpo, sempre com `fieldErrors` quando há campo associado |
+| 500 | `INTERNAL_ERROR` | Erro inesperado |
+| 503 | `SERVICE_UNAVAILABLE` | Falha transitória |
+
+No cliente, um interceptor do Axios converte qualquer falha em `ApiError` (`status`, `code`, `message`, `fieldErrors`). Falhas sem resposta HTTP recebem `status: 0` e um código de cliente: `NETWORK_ERROR`, `TIMEOUT`, `CANCELED` ou `UNKNOWN_ERROR`. `ApiError.isTransient` indica rede, timeout ou 5xx. Todas as funções REST aceitam `AbortSignal`.
+
+### Endpoints
+
+| Status | Método e caminho | Requer sessão | Corpo / query | Resposta |
+| --- | --- | --- | --- | --- |
+| Implementado | `POST /api/auth/register` | Não | `RegisterRequest` | `201 AuthResponse`; 409 `EMAIL_TAKEN`/`USERNAME_TAKEN`; 422 |
+| Implementado | `POST /api/auth/login` | Não | `LoginRequest` | `200 AuthResponse`; 401 `INVALID_CREDENTIALS`; 422 |
+| Implementado | `GET /api/auth/session` | Sim | — | `200 Session`; 401 `UNAUTHENTICATED`/`SESSION_EXPIRED` |
+| Implementado | `POST /api/auth/logout` | Não | — | `204` (idempotente; invalida o token enviado) |
+| Implementado | `GET /api/nfts` | Não | `NftListQuery` | `200 NftListResponse`; 400 |
+| Implementado | `GET /api/nfts/:nftId` | Não | — | `200 Nft`; 404 |
+| Planejado | `GET /api/networks` | Não | — | `200 NetworkListResponse` |
+| Planejado | `GET /api/favorites` | Sim | — | `200 FavoriteListResponse` |
+| Planejado | `PUT /api/favorites/:nftId` | Sim | — | `200 Favorite` (idempotente); 404 |
+| Planejado | `DELETE /api/favorites/:nftId` | Sim | — | `204` (idempotente) |
+| Planejado | `GET /api/cart` | Não | header de visitante ou sessão | `200 Cart` |
+| Planejado | `POST /api/cart/items` | Não | `AddCartItemRequest` | `200 Cart`; 404; 409 `AVAILABILITY_CONFLICT`; 422 |
+| Planejado | `PATCH /api/cart/items/:itemId` | Não | `UpdateCartItemRequest` | `200 Cart`; 409; 422 |
+| Planejado | `DELETE /api/cart/items/:itemId` | Não | — | `200 Cart` |
+| Planejado | `PUT /api/cart/coupon` | Não | `ApplyCouponRequest` | `200 Cart`; 422 `COUPON_INVALID`/`COUPON_EXPIRED` |
+| Planejado | `DELETE /api/cart/coupon` | Não | — | `200 Cart` |
+| Planejado | `POST /api/cart/merge` | Sim | `MergeCartRequest` | `200 Cart` |
+| Planejado | `POST /api/quotes` | Não | `CreateQuoteRequest` | `201 Quote` |
+| Planejado | `POST /api/orders` | Sim | `CreateOrderRequest` + `Idempotency-Key` | `201 Order` (`pending`); `200` com o mesmo pedido ao repetir a chave; 409 `QUOTE_OUTDATED`/`AVAILABILITY_CONFLICT`/`IDEMPOTENCY_KEY_REUSED` |
+| Planejado | `GET /api/orders` | Sim | `?status=` | `200 OrderListResponse` |
+| Planejado | `GET /api/orders/:orderId` | Sim | — | `200 Order`; 403; 404 |
+| Planejado | `GET /api/profile` | Sim | — | `200 Profile` |
+| Planejado | `PATCH /api/profile` | Sim | `UpdateProfileRequest` | `200 Profile`; 409 `EMAIL_TAKEN`/`USERNAME_TAKEN`; 422 |
+| Planejado | `PUT /api/profile/avatar` | Sim | `multipart/form-data` (campo `avatar`, PNG/JPEG/WebP, até 512 KB) | `200 Profile`; 413; 422 |
+| Planejado | `DELETE /api/profile/avatar` | Sim | — | `200 Profile` |
+| Planejado | `POST /api/profile/password` | Sim | `ChangePasswordRequest` | `204`; 422 (senha atual incorreta em `fieldErrors.currentPassword`) |
+| Planejado | `GET /api/wallets` | Sim | — | `200 WalletListResponse` |
+| Planejado | `PUT /api/wallets/:slot` | Sim | `UpsertWalletRequest` (`slot` = `primary` ou `secondary`) | `200 Wallet`; 422 |
+| Planejado | `POST /api/wallets/:walletId/connect` | Sim | `ConnectWalletRequest` | `200 WalletConnection`; 409 `WALLET_CONNECTION_REJECTED` |
+| Planejado | `POST /api/wallets/:walletId/disconnect` | Sim | — | `200 WalletConnection` |
+
+### Catálogo (`GET /api/nfts`)
+
+| Parâmetro | Valores | Padrão |
+| --- | --- | --- |
+| `q` | texto (até 100 caracteres), busca em nome, criador e coleção, sem diferenciar acentos e maiúsculas | — |
+| `category` | repetível: `digital-art`, `photography`, `music`, `3d-art`, `collectibles`, `generative`, `gaming`, `subscriptions`, `utility` | todas |
+| `network` | repetível: `ethereum`, `polygon`, `solana` | todas |
+| `minPrice`, `maxPrice` | string ETH, aplicados ao preço da edição padrão | — |
+| `segment` | `all`, `new` (novos lançamentos), `trending` (em alta) | `all` |
+| `collection` | identificador da coleção (para "Mais desta coleção") | — |
+| `featured` | `true` ou `false` (destaques do banner e "NFT em destaque") | — |
+| `sort` | `recent` (listados recentemente), `price-asc`, `price-desc`, `name-asc`, `rating-desc` | `recent` |
+| `page`, `pageSize` | inteiros; `pageSize` entre 1 e 48 | `1`, `9` |
+
+A resposta traz `items`, `total`, `page`, `pageSize`, `totalPages` e `facets`. Nas facetas, a contagem de cada categoria considera todos os filtros exceto o de categoria (o mesmo vale para rede), de modo que a barra lateral mostra quantos resultados cada opção produziria. `priceRange` traz o menor e o maior preço do catálogo. Página além do total responde `200` com `items` vazio.
+
+Cada NFT tem edições (`1/1`, `1/10`, `1/50`, `Aberta`) com estoque inteiro (`available`), limite por pedido (`maxPerOrder`), preço e preço anterior opcional. `price` e `compareAtPrice` do NFT repetem os da edição padrão (`defaultEditionId`, sempre `1/50`) e são a base de filtro e ordenação. `version` é um inteiro que cresce a cada alteração de preço ou estoque e acompanha os eventos `nft.updated`.
+
+### Cotação e pedido (planejado)
+
+A cotação (`Quote`) é calculada a partir do carrinho atual e da rede escolhida: linhas com preço e disponibilidade atuais (e `issue` quando algo mudou), cupom, subtotal, desconto, taxa de rede, total, `expiresAt`, `id` e `version`. A `version` cresce sempre que o conteúdo da cotação muda para o mesmo carrinho. O pedido referencia `quoteId` e `quoteVersion`; se a cotação expirou ou não corresponde mais ao estado atual, o servidor responde `409 QUOTE_OUTDATED`. O recibo (`OrderReceipt`) é um snapshot gravado na criação do pedido e nunca é recalculado.
+
+### Aritmética de ETH
+
+`src/lib/eth.ts` converte strings decimais para `bigint` em wei (18 casas) e oferece soma, subtração, multiplicação por inteiro, percentual (arredondamento half-up no wei), comparação, mínimo, máximo, leitura de entrada com vírgula e formatação. Nenhum valor monetário passa por `number`. As mesmas funções são usadas pelo cliente e pelos mocks.
 
 ## Eventos Socket.IO
 
@@ -73,7 +163,104 @@ _A preencher._
 
 ## Mocks e cenários
 
-_A preencher._
+A API é simulada pelo MSW no navegador e ativada por `VITE_ENABLE_MOCKS=true` (também no build de demonstração, via `.env.production`). Componentes, hooks e o cliente Axios não conhecem os mocks: toda simulação acontece nos handlers.
+
+### Estrutura
+
+```
+src/mocks/
+  setup.ts            inicializa o banco, aplica a query string, inicia o worker e expõe window.__mocks
+  browser.ts          setupWorker com os handlers
+  endpoints.ts        identificador, método, caminho e exigência de sessão de cada endpoint
+  scenarios.ts        cenários, latência, TTL de sessão e persistência dessas configurações
+  control.ts          objeto global window.__mocks
+  responses.ts        respostas JSON, erro padronizado e falha de rede
+  db/                 estado, persistência, seed, sessões e criptografia
+  fixtures/           NFTs, usuários, cupons, redes e categorias
+  handlers/           handlers REST por recurso, guarda de sessão e validação
+  panel/              painel flutuante de cenários
+```
+
+Cada handler é registrado por `apiRoute(endpoint, resolver)`, que aplica a latência ativa, a falha do cenário (quando houver) e converte exceções em `500 INTERNAL_ERROR`.
+
+### Banco simulado
+
+- Um único objeto (`MockDatabase`) com usuários, sessões, NFTs, favoritos, carrinhos, cupons, cotações, pedidos, carteiras e conexões de carteira, salvo em `localStorage` na chave `kurio.mocks.db.v1` a cada alteração. A versão do esquema faz parte da chave; um esquema diferente é descartado e substituído pelo seed.
+- Senhas são guardadas apenas como hash PBKDF2-SHA-256 (100 000 iterações) com salt por usuário, via Web Crypto. Tokens de sessão são aleatórios (32 bytes) e o banco guarda apenas o SHA-256 do token.
+- Sessões têm expiração fixa (TTL padrão de 2 horas, configurável por `window.__mocks.setSessionTtl(segundos)`). Sessões expiradas continuam registradas por 24 horas para responder `SESSION_EXPIRED` em vez de `UNAUTHENTICATED`.
+- Identificadores criados pela simulação usam contadores (`user-0001`, …), o que mantém os testes determinísticos.
+
+### Reset
+
+O reset recria o seed (catálogo, usuários, carteiras, favoritos e cupons), apaga sessões, carrinhos, cotações e pedidos e volta ao cenário `success` com latência fixa. Ele está disponível no painel ("Restaurar dados", que também recarrega a página) e em `await window.__mocks.reset()`.
+
+### Fixtures
+
+- 46 NFTs com as 4 imagens fornecidas, 9 categorias, 3 redes, 4 coleções e preços de 0.02 a 12.30 ETH. Os 9 primeiros reproduzem os nomes e preços do Figma (Emerald Ape #042 1.19 ETH, Neon Vessel #552 1.99 ETH com preço anterior 2.29 ETH, etc.).
+- Estoques: Sage Nomad #009 e Midnight Patron #090 têm as edições `1/1` e `1/10` esgotadas; Neon Vessel #552, Boss Level #301, Coin Keeper #116 e Ember Scout #150 têm estoque baixo (2 unidades na edição `1/50`); Last Light #999 está totalmente esgotado.
+- Limites por pedido: `1/1` = 1, `1/10` = 3, `1/50` = 10, `Aberta` = 20.
+- Cupons: `KURIO10` (10%, válido), `GENESIS25` (25%, expirado em 31/01/2025). Qualquer outro código é inválido; códigos fora do formato `[A-Z0-9]{4,20}` são erro de validação.
+- Taxa de rede estimada: Ethereum 0.016 ETH, Polygon 0.002 ETH, Solana 0.0008 ETH.
+
+### Credenciais fictícias
+
+| Usuário | E-mail | Senha | Dados |
+| --- | --- | --- | --- |
+| Ana Ribeiro | `ana@kurio.test` | `Kurio#2026` | Carteira principal (MetaMask, Ethereum) e secundária (Coinbase, Polygon); favoritos: Emerald Ape #042 e Ivory Baron #088 |
+| Bruno Tavares | `bruno@kurio.test` | `Kurio#2026` | Apenas carteira principal (WalletConnect, Polygon); favorito: Golden Beat #207 |
+
+### Latência
+
+| Modo | Atraso |
+| --- | --- |
+| `none` | 0 ms |
+| `fixed` (padrão) | 300 ms |
+| `slow` | 2,5 s |
+| `variable` | entre 150 ms e 2 s, por uma sequência pseudoaleatória com semente fixa, reiniciada ao trocar cenário ou latência. Requisições em paralelo terminam fora de ordem, sempre na mesma ordem para a mesma sequência de chamadas. |
+
+### Cenários
+
+| Nome | Efeito |
+| --- | --- |
+| `success` | Tudo funciona normalmente (padrão). |
+| `empty-catalog` | `GET /api/nfts` retorna zero itens e todo detalhe responde 404. |
+| `variable-latency` | Força a latência `variable` (respostas fora de ordem). |
+| `network-error` | Todas as requisições falham na rede (`HttpResponse.error()`). |
+| `server-error` | Todas as requisições respondem 500. |
+| `service-unavailable` | Todas as requisições respondem 503 até o cenário ser trocado. |
+| `transient-failure` | As duas primeiras chamadas de cada endpoint respondem 503; as seguintes funcionam. |
+| `session-expired` | Ao ser ativado, expira todas as sessões abertas; rotas privadas passam a responder 401 `SESSION_EXPIRED`. Novos logins funcionam. |
+| `unauthorized` | Endpoints privados respondem 401 `UNAUTHENTICATED`. |
+| `forbidden` | Endpoints privados respondem 403 `FORBIDDEN`. |
+| `register-conflict` | O cadastro responde 409 `EMAIL_TAKEN` para qualquer e-mail. |
+| `form-validation` | Formulários válidos no cliente recebem 422 com `fieldErrors` do servidor. Implementado no cadastro; perfil, senha e carteiras na parte 2. |
+| `coupon-invalid` | Qualquer cupom responde 422 `COUPON_INVALID`. (parte 2) |
+| `coupon-expired` | Qualquer cupom responde 422 `COUPON_EXPIRED`. (parte 2) |
+| `price-changed` | Na criação do pedido, o preço do primeiro item sobe, `nft.updated` é emitido e o pedido responde 409 `QUOTE_OUTDATED`. (parte 2) |
+| `edition-sold-out` | Na criação do pedido, a edição do primeiro item esgota, `nft.updated` é emitido e o pedido responde 409 `AVAILABILITY_CONFLICT`. (parte 2) |
+| `order-timeout` | O pedido é criado, mas a primeira resposta só chega após o timeout do cliente; o reenvio com a mesma chave recupera o mesmo pedido. (parte 2) |
+| `payment-confirmed` | O pedido fica pendente e é confirmado via `order.updated`. (parte 2) |
+| `payment-declined` | O pedido fica pendente e é recusado via `order.updated`. (parte 2) |
+| `favorite-failure` | Incluir ou remover favoritos responde 503 (rollback otimista). |
+| `wallet-rejected` | Conectar carteira responde 409 `WALLET_CONNECTION_REJECTED`. |
+
+Os cenários de falha genérica (`network-error`, `server-error`, `service-unavailable`, `transient-failure`, `unauthorized`, `forbidden`, `favorite-failure`, `wallet-rejected`) já valem para todos os endpoints, inclusive os da parte 2. Os marcados "(parte 2)" dependem de handlers ainda não implementados.
+
+### Como selecionar
+
+- Query string: `?scenario=<nome>&latency=<modo>` em qualquer URL. Os valores são aplicados, persistidos e removidos da URL antes de o router iniciar.
+- `localStorage`: chave `kurio.mocks.settings.v1` (`{ scenario, latency, sessionTtlSeconds }`). A escolha sobrevive ao refresh.
+- Painel: botão "Mocks" no canto inferior esquerdo, com seleção de cenário e latência, "Expirar sessões" e "Restaurar dados". Ele só é carregado quando `VITE_ENABLE_MOCKS` é `"true"`, em um chunk separado.
+- Testes: `window.__mocks`, disponível somente depois que o service worker assume as requisições:
+
+```ts
+await window.__mocks.reset()
+window.__mocks.setScenario('payment-declined')
+window.__mocks.setLatency('none')
+window.__mocks.setSessionTtl(5)
+window.__mocks.expireSessions()
+window.__mocks.getSettings()
+```
 
 ## Acessibilidade
 
@@ -109,6 +296,12 @@ E-mail e telefone de contato do rodapé são fictícios e aparecem como texto, s
 - O ícone do botão central da barra mobile usa a cor Ink em vez de branco: branco sobre o laranja tem contraste de 2,45:1, abaixo do mínimo de 3:1 para elementos gráficos.
 - O rodapé não aparece nos frames mobile, que mostram apenas a primeira tela. No mobile e no tablet as colunas são reorganizadas em uma ou duas colunas.
 
+### Catálogo e dados
+
+- Categoria e coleção são campos distintos. A barra lateral do Figma chama de "Coleções" a lista Arte digital, Fotografia, Música etc.; na API essas opções são categorias (`category`). A coleção (`collection`, por exemplo "Kurio Apes") é a que aparece no detalhe ("Coleção: Kurio Apes") e alimenta "Mais desta coleção".
+- O Figma mostra apenas a ordenação "Listados recentemente" (`recent`). As ordenações preço crescente (`price-asc`), preço decrescente (`price-desc`), nome (`name-asc`) e avaliação (`rating-desc`) foram acrescentadas.
+- O preço exibido no card é o da edição `1/50`, que é a edição padrão. Os preços das demais edições derivam dele: `1/1` = 5×, `1/10` = 2× e `Aberta` = 50%. A edição `Aberta` tem estoque inteiro de 1000 unidades.
+
 ### Substituição de assets
 
 - Logo KURIO: implementado como texto estilizado (Roboto Mono bold com espaçamento entre letras), não como imagem.
@@ -119,4 +312,6 @@ E-mail e telefone de contato do rodapé são fictícios e aparecem como texto, s
 
 ## Limitações
 
-_A preencher._
+- A API simulada roda no navegador: o estado é por origem e por perfil do navegador, e duas abas compartilham o mesmo `localStorage` sem sincronização entre elas.
+- Web Crypto (hash de senha e tokens) exige contexto seguro: `localhost` ou HTTPS.
+- A galeria do detalhe repete a imagem do NFT quatro vezes, como no Figma, porque há apenas uma imagem por obra.

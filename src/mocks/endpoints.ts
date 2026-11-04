@@ -1,0 +1,36 @@
+export const ENDPOINTS = {
+  'auth.register': { method: 'POST', path: '/auth/register', auth: false },
+  'auth.login': { method: 'POST', path: '/auth/login', auth: false },
+  'auth.session': { method: 'GET', path: '/auth/session', auth: true },
+  'auth.logout': { method: 'POST', path: '/auth/logout', auth: false },
+  'nfts.list': { method: 'GET', path: '/nfts', auth: false },
+  'nfts.detail': { method: 'GET', path: '/nfts/:nftId', auth: false },
+  'networks.list': { method: 'GET', path: '/networks', auth: false },
+  'favorites.list': { method: 'GET', path: '/favorites', auth: true },
+  'favorites.add': { method: 'PUT', path: '/favorites/:nftId', auth: true },
+  'favorites.remove': { method: 'DELETE', path: '/favorites/:nftId', auth: true },
+  'cart.get': { method: 'GET', path: '/cart', auth: false },
+  'cart.addItem': { method: 'POST', path: '/cart/items', auth: false },
+  'cart.updateItem': { method: 'PATCH', path: '/cart/items/:itemId', auth: false },
+  'cart.removeItem': { method: 'DELETE', path: '/cart/items/:itemId', auth: false },
+  'cart.applyCoupon': { method: 'PUT', path: '/cart/coupon', auth: false },
+  'cart.removeCoupon': { method: 'DELETE', path: '/cart/coupon', auth: false },
+  'cart.merge': { method: 'POST', path: '/cart/merge', auth: true },
+  'quotes.create': { method: 'POST', path: '/quotes', auth: false },
+  'orders.create': { method: 'POST', path: '/orders', auth: true },
+  'orders.list': { method: 'GET', path: '/orders', auth: true },
+  'orders.get': { method: 'GET', path: '/orders/:orderId', auth: true },
+  'profile.get': { method: 'GET', path: '/profile', auth: true },
+  'profile.update': { method: 'PATCH', path: '/profile', auth: true },
+  'profile.updateAvatar': { method: 'PUT', path: '/profile/avatar', auth: true },
+  'profile.removeAvatar': { method: 'DELETE', path: '/profile/avatar', auth: true },
+  'profile.changePassword': { method: 'POST', path: '/profile/password', auth: true },
+  'wallets.list': { method: 'GET', path: '/wallets', auth: true },
+  'wallets.upsert': { method: 'PUT', path: '/wallets/:slot', auth: true },
+  'wallets.connect': { method: 'POST', path: '/wallets/:walletId/connect', auth: true },
+  'wallets.disconnect': { method: 'POST', path: '/wallets/:walletId/disconnect', auth: true },
+} as const satisfies Record<string, { method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'; path: string; auth: boolean }>
+
+export type EndpointId = keyof typeof ENDPOINTS
+
+export const ENDPOINT_IDS = Object.keys(ENDPOINTS) as EndpointId[]
