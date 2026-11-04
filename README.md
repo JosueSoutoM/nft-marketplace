@@ -83,6 +83,7 @@ Cupons:
 | `npm run lint` | Lint com Oxlint. |
 | `npm run test:e2e` | Testes Playwright. Faz o build, sobe o preview na porta 4173 e roda os projetos `desktop-chromium` e `mobile-chromium`. |
 | `npm run test:e2e:report` | Abre o relatório HTML do último teste (`playwright-report/`), com traces das falhas. |
+| `npm run audit:lighthouse` | Auditoria Lighthouse de `/` e `/nfts/emerald-ape-042`, mobile e desktop, três execuções cada. Faz o build em `lighthouse/.build/`, sobe o preview na porta 4180 e grava os relatórios em `lighthouse/reports/`. |
 
 ### Testes E2E
 
@@ -108,6 +109,39 @@ npx playwright test --ui
 ```
 
 Cada teste parte de um estado isolado: abre a aplicação, restaura o banco simulado com `window.__mocks.reset()` e define cenário, latência e liquidação conforme o caso. Os testes de tempo real passam pelo `socket.io-client` e os de REST pelos handlers do MSW. Traces e capturas são mantidos apenas nas falhas.
+
+### Regressão visual
+
+`e2e/visual.spec.ts` compara capturas de página inteira de Início, Detalhe do NFT (`/nfts/emerald-ape-042`), Carrinho com dois itens e Pagamento logado como Ana, nos projetos `desktop-chromium` (1440 px) e `mobile-chromium` (390 px). As baselines ficam versionadas em `e2e/visual.spec.ts-snapshots/`.
+
+Para manter os dados estáveis, cada teste restaura os mocks com `window.__mocks.reset()`, usa o cenário `success`, latência `none` e painel de mocks oculto, fixa o relógio com `page.clock.setFixedTime`, ativa `prefers-reduced-motion`, desliga animações e o cursor de texto, espera fontes e imagens carregarem e a ausência de skeletons, e mascara textos que variam (elementos `<time>` e a validade da cotação).
+
+Rodar apenas a regressão visual:
+
+```bash
+PLAYWRIGHT_CHANNEL=chrome npx playwright test e2e/visual.spec.ts
+```
+
+Atualizar as baselines depois de uma mudança visual intencional, revisando as imagens geradas antes de versioná-las:
+
+```bash
+PLAYWRIGHT_CHANNEL=chrome npx playwright test e2e/visual.spec.ts --update-snapshots
+```
+
+Limitação: a renderização de fontes, antialiasing e imagens depende do sistema operacional e do navegador. Por isso o Playwright grava uma baseline por plataforma (sufixo `-win32`, `-linux` ou `-darwin` no nome do arquivo), e as baselines versionadas foram geradas no Windows com o Google Chrome do sistema (`PLAYWRIGHT_CHANNEL=chrome`). Em outro sistema operacional, ou com o Chromium do Playwright, os testes falham por falta de baseline ou por diferenças de pixels; gere baselines próprias com `--update-snapshots` nesse ambiente (por exemplo, no Linux da CI) e versione-as junto das existentes.
+
+### Auditoria Lighthouse
+
+```bash
+npm run audit:lighthouse
+```
+
+Usa o Google Chrome instalado no sistema, em modo headless, e a porta 4180, que precisa estar livre. Como o build vai para `lighthouse/.build/`, a auditoria pode rodar ao lado dos testes E2E sem sobrescrever o `dist/`. Ela substitui o conteúdo de `lighthouse/reports/`:
+
+- `mobile/` e `desktop/`: relatórios HTML e JSON de cada execução, com `manifest.json`;
+- `summary.json` e `summary.md`: medianas por página e perfil.
+
+A configuração está em `lighthouse/lighthouserc.mobile.cjs` e `lighthouse/lighthouserc.desktop.cjs`. Resultados, ambiente e análise: [`lighthouse/RESULTS.md`](lighthouse/RESULTS.md).
 
 ## Cenários da API simulada
 

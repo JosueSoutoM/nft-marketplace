@@ -23,6 +23,7 @@ export type Latency = 'none' | 'fixed' | 'slow' | 'variable'
 export type Settlement = 'auto' | 'manual'
 
 interface MockControls {
+  reset: () => Promise<void>
   setScenario: (name: Scenario) => void
   setLatency: (mode: Latency) => void
   expireSessions: () => void
