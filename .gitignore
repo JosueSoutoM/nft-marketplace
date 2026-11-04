@@ -30,3 +30,5 @@ CLAUDE.md
 .env.*
 !.env.example
 !.env.production
+
+.tanstack
