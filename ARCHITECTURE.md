@@ -16,6 +16,7 @@ src/
     contracts/            tipos e constantes compartilhados entre cliente e mocks
   assets/icons/           SVGs otimizados (Google e Facebook)
   components/
+    cart/                 tela do carrinho: itens, quantidade, cupom, resumo, avisos, estados e contador
     catalog/              catálogo: busca, filtros, segmentos, ordenação, grade, estados e paginação
     favorites/            botão de favorito (card, detalhe desktop e detalhe mobile)
     home/                 seções da tela inicial: banner, NFT em destaque, chamadas e Diário da Cunhagem
@@ -55,7 +56,7 @@ src/
 - `/` guarda o estado do catálogo na URL (ver "Estado do catálogo na URL").
 - `/nfts/$nftId` aceita o search param `edition` (ver "Detalhe do NFT").
 - `/login` e `/register` aceitam os search params `redirect` e `reason`. Apenas caminhos internos são aceitos (iniciados por `/` e não por `//`); qualquer outro valor é descartado. O botão "Entrar" do header envia a URL atual como `redirect`.
-- `staticData.mobileActionBar` indica que a tela tem barra de ação fixa no mobile (detalhe): o layout raiz reserva o espaço inferior e afasta as notificações dessa barra.
+- `staticData.mobileActionBar` indica que a tela tem barra de ação fixa no mobile (detalhe, com quantidade, preço, "Comprar NFT" e carrinho): o layout raiz reserva 192 px no fim da página e afasta as notificações dessa barra.
 - `staticData.hideMobileTabBar` oculta a barra inferior no mobile nas telas que, no Figma, têm barra de ação própria ou ocupam a tela inteira: detalhes, carrinho, pagamento, login e cadastro.
 - O acesso direto e o refresh funcionam em qualquer rota: no desenvolvimento e no preview pelo fallback de SPA do Vite, e na Vercel pelo rewrite de `vercel.json`.
 
@@ -366,7 +367,52 @@ Favoritar e desfavoritar no detalhe com persistência após refresh; falha da mu
 
 ## Carrinho
 
-_A preencher._
+Tela em `src/routes/cart.tsx` (`CartPage`, em `src/components/cart/`), dados em `src/hooks/use-cart.ts` e regras de texto em `src/lib/cart-changes.ts`.
+
+### Dados e chaves
+
+- `useCart()` consulta `GET /api/cart` na chave `['user', userId, 'cart']` (com sessão) ou `['guest', 'cart']` (visitante, com `X-Guest-Cart-Id`), com `staleTime` de 15 s. O mesmo cache alimenta o contador do header, da barra inferior mobile e do botão de carrinho da barra do detalhe (`itemCount`, a soma das quantidades), então o número é sempre o da API.
+- `useCartQuote(cart)` faz `POST /api/quotes { network: 'ethereum' }` na chave `['user', userId, 'quote', 'ethereum']` (ou `['guest', 'quote', 'ethereum']`), só quando o carrinho tem itens. O carrinho cota na Ethereum, a rede padrão; a rede final é escolhida no pagamento.
+- O resumo mostra `subtotal`, `discount`, `networkFee` e `total` exatamente como a cotação devolve, formatados com `formatEth`. O cliente não recalcula valores. "Taxa estimada" aparece quando `networkFeeEstimated` é verdadeiro.
+- Mutations (`useAddToCart`, `useUpdateCartItem`, `useRemoveCartItem`, `useApplyCoupon`, `useRemoveCoupon`) recebem o carrinho completo da API, gravam no cache com `setQueryData` e invalidam a cotação. Uma resposta só substitui o cache se o `updatedAt` dela for igual ou mais recente que o do cache, para que respostas fora de ordem não regridam o carrinho. Não há atualização otimista no carrinho: quantidade, total e resumo só mudam com a resposta da API.
+- Os callbacks conferem se o dono da sessão ainda é o mesmo de quando a mutation começou; se não for, nada é gravado. O isolamento por usuário segue as chaves `['user', id]` e `['guest']` (ver "Logout e troca de usuário").
+- `409 AVAILABILITY_CONFLICT` invalida o carrinho e a cotação, para a tela mostrar a disponibilidade atual.
+
+### Adicionar pelo detalhe
+
+- "Comprar" (desktop) e "Comprar NFT" (barra mobile) adicionam a edição selecionada e a quantidade escolhida (`POST /api/cart/items`). O sucesso aparece numa notificação ("Emerald Ape #042 foi adicionado ao carrinho." com "2 unidades da edição 1/50. O carrinho tem 2 itens." e a ação "Ver carrinho"), anunciada pela região `aria-live` do Sonner.
+- Conflito de disponibilidade: a notificação mostra a mensagem da API e o máximo ("Você já tem 3 unidades no carrinho. Disponível nesta edição: 3 unidades." ou "Limite por pedido nesta edição: N unidades.").
+- Durante o envio, o botão fica com `aria-disabled` e `aria-busy` e ignora novos cliques. Com a edição esgotada, o clique anuncia o motivo.
+- O botão de carrinho da barra mobile é um link para `/cart`, com o contador.
+
+### Tela do carrinho
+
+- Cada item mostra imagem, nome, ID do token (desktop), edição, preço unitário (desktop), quantidade, total do item e remover. Os itens são uma lista; o cabeçalho visual da tabela (NFTs, Preço, Edições, Total) fica com `aria-hidden`, e cada valor tem o seu rótulo para leitores de tela ("Preço unitário:", "Total do item (2 unidades × 1.19 ETH):").
+- Quantidade: botões e campo numérico. O campo só aceita dígitos e envia ao sair dele ou com Enter (Esc descarta). O valor é limitado a 1 até `maxQuantity`; acima disso, é ajustado e o motivo é anunciado. No limite, "Aumentar" fica com `aria-disabled` e o motivo aparece abaixo, ligado ao campo por `aria-describedby` ("Só restam 3 unidades desta edição." ou "Limite de N unidades por pedido nesta edição.").
+- Durante a mutation de um item, os botões e o campo daquele item ficam bloqueados (`aria-disabled`, campo somente leitura), sem perder o foco e sem cliques duplicados. Cada mudança é anunciada ("Quantidade de Emerald Ape #042, edição 1/50 alterada para 2."). Ao remover, o foco vai para a lista de itens (ou para o título do estado vazio).
+- Falha de mutation: a mensagem da API aparece no próprio item (`role="alert"`) e o carrinho continua como estava. Tentar de novo funciona normalmente.
+- Cupom: `label` "Código promocional", erro em `role="alert"` ligado ao campo por `aria-describedby` e `aria-invalid`, com o foco de volta no campo. Inválido e expirado têm mensagens distintas, vindas da API. O cupom aplicado aparece abaixo do campo ("Cupom KURIO10 aplicado: 10% de desconto.") com "Remover cupom". Se a cotação disser que o cupom aplicado deixou de valer (`couponError`), a mensagem aparece ali.
+- "Conectar e finalizar" leva a `/checkout`; o visitante passa pelo login com `redirect=/checkout`, e o carrinho é mesclado ao entrar. Fica bloqueado (`aria-disabled`, com o motivo ligado por `aria-describedby`) quando algum item está esgotado ou acima do disponível, ou quando a cotação diz que não é possível comprar.
+- "Colecionadores também viram": `GET /api/nfts?segment=trending&sort=rating-desc&pageSize=16`, sem os NFTs do carrinho, no mesmo carrossel de "Mais desta coleção".
+
+### Estados
+
+- Carregando: skeleton com brilho nas linhas e no resumo, com as mesmas dimensões da tela final (o teste compara posição e altura da primeira linha). Enquanto a cotação carrega, os valores do resumo são skeletons; ao recalcular, o resumo fica com opacidade reduzida e `aria-busy`.
+- Vazio: "Seu carrinho está vazio", com o link "Explorar o catálogo".
+- Erro ao carregar: "Não foi possível carregar o carrinho", com a mensagem da API e "Tentar novamente". Erro da cotação: mensagem e "Tentar novamente" no lugar dos valores.
+
+### Tempo real
+
+- Com o carrinho em cache, o `nft.updated` de um NFT do carrinho compara a edição exata de cada item com os dados do evento e anuncia a mudança ("Emerald Ape #042, edição 1/50, no carrinho: Preço alterado de 1.19 ETH para 1.31 ETH."). Em seguida, o carrinho e a cotação são invalidados e refeitos pela API, o que atualiza o resumo. Com o detalhe do mesmo NFT aberto, o anúncio fica com o detalhe.
+- A tela compara cada versão do carrinho com a anterior (`useCartItemNotices`) e mostra o aviso no item: "Preço alterado de X para Y.", "Disponibilidade reduzida: restam N unidades." ou "Edição esgotada.". O aviso continua visível enquanto a tela estiver aberta. Esgotado ou acima do disponível também mostra o que fazer e bloqueia "Conectar e finalizar".
+
+### Persistência
+
+- O carrinho do visitante fica no banco simulado, identificado pelo `kurio.guest-cart-id` do `localStorage`, então sobrevive ao refresh. No login, o merge junta os itens ao carrinho do usuário e apaga o identificador do visitante (ver "Merge do carrinho").
+
+### Testes (`e2e/cart.spec.ts`)
+
+Adicionar pelo detalhe com edição e quantidade, notificação e contador; conflito de disponibilidade com o máximo; alterar quantidade pelos botões e pelo campo, limite de disponibilidade com motivo, remover com foco e estado vazio; cupom inválido, expirado (GENESIS25), válido (KURIO10) com desconto e total da API, persistência após refresh e remoção; carrinho do visitante após refresh e após login pelo "Conectar e finalizar" (redirect para `/checkout`); preço e disponibilidade alterados por `__mocks.updateNft` com aviso no item, anúncio, resumo atualizado e checkout bloqueado; falha de mutation sem perder itens e nova tentativa; erro ao carregar com "Tentar novamente"; skeleton sem deslocamento com latência lenta.
 
 ## Estado do catálogo na URL
 
@@ -460,7 +506,7 @@ As chaves vêm de `src/lib/query-keys.ts`. Dados privados ficam sob `['user', us
 ### Estado e feedback
 
 - `useRealtimeStatus()` devolve `idle`, `connecting`, `connected`, `reconnecting` ou `disconnected`.
-- `announce(message)` (`src/lib/announcer.ts`) publica mensagens numa região `aria-live="polite"` única (`LiveAnnouncer`, no layout raiz). A camada de tempo real anuncia mudança de preço ou esgotamento de NFTs que estão no carrinho ("O preço de Emerald Ape #042 mudou para 1.31 ETH.") e a confirmação ou recusa do pagamento. Com o detalhe do NFT aberto, o anúncio fica com a tela de detalhe, que conhece a edição selecionada; assim a mesma mudança não é anunciada duas vezes.
+- `announce(message)` (`src/lib/announcer.ts`) publica mensagens numa região `aria-live="polite"` única (`LiveAnnouncer`, no layout raiz). A camada de tempo real anuncia mudanças de preço e disponibilidade na edição de cada item do carrinho ("Emerald Ape #042, edição 1/50, no carrinho: Preço alterado de 1.19 ETH para 1.31 ETH.") e a confirmação ou recusa do pagamento. Com o detalhe do NFT aberto, o anúncio fica com a tela de detalhe, que conhece a edição selecionada; assim a mesma mudança não é anunciada duas vezes.
 
 ## Mocks e cenários
 
@@ -675,7 +721,8 @@ E-mail e telefone de contato do rodapé são fictícios e aparecem como texto, s
 - "Mercado" leva à seção de catálogo da tela inicial (`/#catalogo`). O ícone de busca do header abre um campo de busca (popover) que leva ao catálogo com `q`. Os links de "Coleções" do rodapé aplicam o filtro de categoria correspondente.
 - O Figma não desenha o header logado (o frame de perfil ainda mostra "Entrar"). Logado, o botão "Entrar" dá lugar ao avatar (ou às iniciais) com o nome e um menu com Dados do perfil, Carteiras e Sair, nas cores do menu lateral do perfil. No mobile, a aba "Perfil" mostra o avatar e abre o mesmo menu.
 - Em `/login` e `/register` o item "Início" do header fica ativo, como no Figma, porque o diálogo aparece sobre a tela inicial.
-- O contador do carrinho no header só será exibido com dados reais do carrinho; o valor fixo do Figma não é reproduzido.
+- O contador do carrinho (header, barra inferior mobile e barra do detalhe) mostra `itemCount` da API, a soma das quantidades; some quando o carrinho está vazio. O nome acessível inclui o número ("Carrinho, 2 itens").
+- "Mercado" fica ativo no header também no carrinho, como no Figma.
 - O ícone do botão central da barra mobile usa a cor Ink em vez de branco: branco sobre o laranja tem contraste de 2,45:1, abaixo do mínimo de 3:1 para elementos gráficos.
 - O rodapé não aparece nos frames mobile, que mostram apenas a primeira tela. No mobile e no tablet as colunas são reorganizadas em uma ou duas colunas.
 
@@ -695,7 +742,7 @@ E-mail e telefone de contato do rodapé são fictícios e aparecem como texto, s
 
 ### Detalhe do NFT
 
-- Comprar (desktop) e os botões "Comprar NFT" e carrinho da barra mobile ainda não aparecem; serão ligados à API na tarefa de carrinho, e nenhum botão ficou sem função.
+- "Comprar" (desktop) e "Comprar NFT" (mobile) adicionam ao carrinho e mostram uma notificação com "Ver carrinho", em vez de ir direto para o pagamento: o carrinho é onde ficam cupom, revisão e o "Conectar e finalizar". O botão redondo de carrinho da barra mobile leva ao carrinho e mostra o contador.
 - Favoritar (desktop) fica à direita da quantidade, onde o Figma o mostra depois de "Comprar". Favoritado, o botão troca o texto para "Remover" e preenche o coração, para o estado não depender só de cor; o Figma não desenha esse estado. No mobile, o coração fica no topo, ao lado do botão de voltar, com o mesmo círculo dele.
 - Foram acrescentadas as linhas "Criador: …" e "Disponível: N de M na edição X", que não estão no Figma: o enunciado pede o criador, e a disponibilidade explica o limite de quantidade e reflete o `nft.updated`.
 - O preço exibido é o da edição selecionada. O Figma mostra o da `1/50`, que é a edição padrão. Quando há preço anterior, ele aparece riscado ao lado.
@@ -707,6 +754,16 @@ E-mail e telefone de contato do rodapé são fictícios e aparecem como texto, s
 - "Mais desta coleção" mostra 5 cards por página no desktop, 3 no tablet e 2 no mobile, com os pontos calculados pela largura. Os itens vêm da coleção do NFT (`collection`), por isso diferem dos do Figma.
 - Os ícones de compartilhamento são links reais: LinkedIn e Twitter abrem em nova aba, e o e-mail usa `mailto:`, sempre com o endereço da página.
 - A lupa sobre a imagem (Figma) amplia a imagem num diálogo.
+
+### Carrinho
+
+- Desktop: o Figma mostra "ID do token" abaixo do nome; aqui também aparece a linha "Edição: 1/50", porque o mesmo NFT pode estar no carrinho em edições diferentes. O preço unitário é o da edição.
+- Mobile: o Figma não mostra como remover um item (o ícone de lixeira aparece sobreposto ao "+" do terceiro item). Aqui a lixeira fica no canto superior direito do card, e o seletor de quantidade fica na linha do total. Os botões de quantidade têm 32 px, acima dos 30 px do frame, e o card tem 102 px de altura (94 no frame) para caber nome, edição e seletor sem sobreposição.
+- O desconto mostra a unidade ("(-) 0.00 ETH"); o Figma mostra "(-) 00.00".
+- O rótulo do desconto vem da cotação quando há cupom ("Desconto do lançamento" nas fixtures) e é "Desconto do lançamento" sem cupom, como no Figma.
+- O título "Resumo da carteira" e o rótulo "Código promocional" ficam ocultos visualmente no mobile, como no frame, mas continuam disponíveis para leitores de tela. No desktop, o título "Carrinho de NFTs" é o `h1` oculto visualmente, porque o frame mostra só a trilha.
+- Estados sem frame (cupom aplicado, erro do cupom, aviso de preço ou disponibilidade, item esgotado, erro de mutation, vazio e erro) seguem os tokens: Coral para erros, Accent para avisos, Surface Raised para o cupom aplicado.
+- "Colecionadores também viram" usa os NFTs em alta da API, por isso difere dos itens do Figma. Aparece também no mobile, abaixo do resumo.
 
 ### Login e cadastro
 

@@ -29,7 +29,12 @@ function RootLayout() {
   const reserveMobileBar = !hideMobileTabBar || mobileActionBar
 
   return (
-    <div className={cn('flex min-h-dvh flex-col', reserveMobileBar && 'pb-28 md:pb-0')}>
+    <div
+      className={cn(
+        'flex min-h-dvh flex-col',
+        mobileActionBar ? 'pb-48 md:pb-0' : reserveMobileBar && 'pb-28 md:pb-0',
+      )}
+    >
       <SkipLink />
       <SiteHeader />
       <main id={MAIN_CONTENT_ID} tabIndex={-1} className="flex-1 outline-none">
@@ -39,7 +44,7 @@ function RootLayout() {
       {!hideMobileTabBar && <MobileTabBar />}
       <SessionWatcher />
       <LiveAnnouncer />
-      <Toaster position="bottom-right" mobileOffset={{ bottom: reserveMobileBar ? 120 : 16 }} />
+      <Toaster position="bottom-right" mobileOffset={{ bottom: mobileActionBar ? 200 : reserveMobileBar ? 120 : 16 }} />
     </div>
   )
 }

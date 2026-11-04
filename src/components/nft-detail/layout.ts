@@ -19,4 +19,10 @@ export const carouselTrackClass =
 export const carouselItemClass =
   'relative w-[calc((100%-1rem)/2)] shrink-0 snap-start md:w-[calc((100%-3rem)/3)] lg:w-[calc((100%-6.5rem)/5)]'
 export const mobileBarClass =
-  'fixed inset-x-0 bottom-0 z-40 flex min-h-24 items-start justify-between gap-4 rounded-t-[1.75rem] border-t border-border bg-surface-card px-6 pt-7 pb-[max(1rem,env(safe-area-inset-bottom))] md:hidden'
+  'fixed inset-x-0 bottom-0 z-40 flex flex-col gap-4 rounded-t-[1.75rem] border-t border-border bg-surface-card px-6 pt-6 pb-[max(1rem,env(safe-area-inset-bottom))] md:hidden'
+export const mobileBarRowClass = 'flex items-start justify-between gap-4'
+export const mobileBuyButtonClass =
+  'flex h-14 flex-1 items-center justify-center rounded-full bg-linear-to-r from-primary-light to-primary-dark text-body-lg font-bold text-primary-foreground transition-opacity aria-disabled:cursor-not-allowed aria-disabled:opacity-60'
+export const mobileCartLinkClass =
+  'relative flex size-14 shrink-0 items-center justify-center rounded-full border border-border bg-surface-raised text-text-accent transition-colors hover:text-primary-light'
+export const desktopBuyButtonClass = 'h-9 w-[6.375rem] px-0 text-body-sm font-bold uppercase aria-disabled:cursor-not-allowed aria-disabled:opacity-60'

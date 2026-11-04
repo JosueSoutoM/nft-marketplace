@@ -14,6 +14,7 @@ import { NftDetailTabs } from '@/components/nft-detail/nft-detail-tabs'
 import { NftGallery } from '@/components/nft-detail/nft-gallery'
 import { NftInfo } from '@/components/nft-detail/nft-info'
 import { NftMobileBar } from '@/components/nft-detail/nft-mobile-bar'
+import { useAddToCartAction } from '@/components/nft-detail/use-add-to-cart-action'
 import { useEditionChangeFeedback } from '@/components/nft-detail/use-edition-change-feedback'
 import { nftDetailQueryOptions, useNftDetail } from '@/hooks/use-nft-detail'
 import { clampQuantity, limitReason, maxQuantity, resolveEdition, validateNftDetailSearch } from '@/lib/nft-edition'
@@ -55,6 +56,7 @@ function NftDetailView({ nft }: { nft: Nft }) {
 
   const changeQuantity = useCallback((next: number) => setQuantity(next), [])
   useEditionChangeFeedback(nft, edition, quantity, changeQuantity)
+  const cartAction = useAddToCartAction(nft, edition, quantity, reason)
 
   function selectEdition(editionId: string) {
     const next = nft.editions.find((item) => item.id === editionId)
@@ -97,6 +99,7 @@ function NftDetailView({ nft }: { nft: Nft }) {
             max={max}
             limitReason={reason}
             shareUrl={shareUrl}
+            cartAction={cartAction}
             onSelectEdition={selectEdition}
             onQuantityChange={changeQuantity}
           />
@@ -111,6 +114,7 @@ function NftDetailView({ nft }: { nft: Nft }) {
         quantity={quantity}
         max={max}
         limitReason={reason}
+        cartAction={cartAction}
         onQuantityChange={changeQuantity}
       />
     </>

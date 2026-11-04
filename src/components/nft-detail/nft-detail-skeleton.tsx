@@ -13,6 +13,7 @@ import {
   mainPanelClass,
   mainImageClass,
   mobileBarClass,
+  mobileBarRowClass,
   pageClass,
   tabsSectionClass,
   thumbButtonClass,
@@ -84,7 +85,8 @@ export function NftDetailSkeleton() {
                 <Skeleton className="h-12 w-8 rounded-full" />
                 <Skeleton className="h-6 w-10" />
                 <Skeleton className="h-12 w-8 rounded-full" />
-                <Skeleton className="ml-auto h-9 w-28" />
+                <Skeleton className="ml-auto h-9 w-[6.375rem]" />
+                <Skeleton className="h-9 w-28" />
               </div>
               <div className="mt-3 md:mt-4">
                 {Array.from({ length: INFO_LINES }, (_, index) => (
@@ -122,8 +124,14 @@ export function NftDetailSkeleton() {
         </div>
       </Container>
       <div className={mobileBarClass} aria-hidden="true">
-        <Skeleton className="h-10 w-36" />
-        <Skeleton className="h-6 w-24" />
+        <div className={mobileBarRowClass}>
+          <Skeleton className="h-10 w-36" />
+          <Skeleton className="h-6 w-24" />
+        </div>
+        <div className="flex items-center gap-3">
+          <Skeleton className="h-14 flex-1 rounded-full" />
+          <Skeleton className="size-14 rounded-full" />
+        </div>
       </div>
     </>
   )

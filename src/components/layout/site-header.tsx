@@ -1,6 +1,9 @@
 import { Link } from '@tanstack/react-router'
 import { ChevronDown, CircleUser, LogIn, ShoppingCart } from 'lucide-react'
 import { AccountMenu } from '@/components/account/account-menu'
+import { CartCountBadge } from '@/components/cart/cart-count'
+import { useCartCount } from '@/hooks/use-cart'
+import { cartLinkLabel } from '@/lib/cart-changes'
 import { UserAvatar } from '@/components/account/user-avatar'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -57,6 +60,7 @@ function HeaderAccount({ redirect }: { redirect: string | undefined }) {
 export function SiteHeader() {
   const section = useActiveSection()
   const redirect = useLoginRedirect()
+  const cartCount = useCartCount()
 
   return (
     <header className="hidden md:block">
@@ -81,7 +85,7 @@ export function SiteHeader() {
                 hash={CATALOG_HASH}
                 activeOptions={{ exact: true, includeHash: true }}
                 aria-current={section === 'market' ? 'page' : undefined}
-                className={cn(navItemClass, (section === 'market' || section === 'favorites') && activeNavItemClass)}
+                className={cn(navItemClass, (section === 'market' || section === 'favorites' || section === 'cart') && activeNavItemClass)}
               >
                 Mercado
               </Link>
@@ -103,10 +107,12 @@ export function SiteHeader() {
           <HeaderSearch className={iconLinkClass} />
           <Link
             to="/cart"
-            aria-label="Carrinho"
+            aria-label={cartLinkLabel(cartCount)}
+            aria-current={section === 'cart' ? 'page' : undefined}
             className={cn(iconLinkClass, section === 'cart' && 'text-text-accent')}
           >
             <ShoppingCart className="size-6" aria-hidden="true" />
+            <CartCountBadge count={cartCount} className="top-0.5 right-0" />
           </Link>
           <HeaderAccount redirect={redirect} />
         </div>

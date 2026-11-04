@@ -1,13 +1,15 @@
 import { Star } from 'lucide-react'
 import type { Nft, NftEdition } from '@/api/contracts'
 import { FavoriteButton } from '@/components/favorites/favorite-button'
+import { Button } from '@/components/ui/button'
 import { EditionPicker } from './edition-picker'
-import { infoClass, infoLineClass, titleClass } from './layout'
+import { desktopBuyButtonClass, infoClass, infoLineClass, titleClass } from './layout'
 import { NftPrice } from './nft-price'
 import { NftShareLinks } from './nft-share-links'
 import { QuantityStepper } from './quantity-stepper'
 import { formatRating } from '@/lib/nft-edition'
 import { StarRating } from './star-rating'
+import type { AddToCartAction } from './use-add-to-cart-action'
 
 type NftInfoProps = {
   nft: Nft
@@ -16,6 +18,7 @@ type NftInfoProps = {
   max: number
   limitReason: string
   shareUrl: string
+  cartAction: AddToCartAction
   onSelectEdition: (editionId: string) => void
   onQuantityChange: (quantity: number) => void
 }
@@ -27,6 +30,7 @@ export function NftInfo({
   max,
   limitReason,
   shareUrl,
+  cartAction,
   onSelectEdition,
   onQuantityChange,
 }: NftInfoProps) {
@@ -65,6 +69,14 @@ export function NftInfo({
       <div className="mt-4 hidden items-start justify-between gap-4 md:flex">
         <QuantityStepper quantity={quantity} max={max} limitReason={limitReason} onChange={onQuantityChange} />
         <div className="flex items-center gap-2 pt-1.5">
+          <Button
+            aria-disabled={cartAction.pending || cartAction.unavailable || undefined}
+            aria-busy={cartAction.pending || undefined}
+            onClick={cartAction.add}
+            className={desktopBuyButtonClass}
+          >
+            Comprar
+          </Button>
           <FavoriteButton nft={nft} variant="labeled" />
         </div>
       </div>

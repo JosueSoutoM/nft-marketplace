@@ -1,6 +1,9 @@
 import { Link } from '@tanstack/react-router'
 import { Heart, House, ScanLine, ShoppingCart, User } from 'lucide-react'
 import { AccountMenu } from '@/components/account/account-menu'
+import { CartCountBadge } from '@/components/cart/cart-count'
+import { useCartCount } from '@/hooks/use-cart'
+import { cartLinkLabel } from '@/lib/cart-changes'
 import { UserAvatar } from '@/components/account/user-avatar'
 import { useSession } from '@/hooks/use-session'
 import { cn } from '@/lib/utils'
@@ -39,6 +42,7 @@ function ProfileTab({ active }: { active: boolean }) {
 
 export function MobileTabBar() {
   const section = useActiveSection()
+  const cartCount = useCartCount()
 
   return (
     <nav
@@ -74,11 +78,12 @@ export function MobileTabBar() {
             <li>
               <Link
                 to="/cart"
-                aria-label="Carrinho"
+                aria-label={cartLinkLabel(cartCount)}
                 aria-current={section === 'cart' ? 'page' : undefined}
-                className={cn(tabClass, section === 'cart' && activeTabClass)}
+                className={cn(tabClass, 'relative', section === 'cart' && activeTabClass)}
               >
                 <ShoppingCart className="size-6" aria-hidden="true" />
+                <CartCountBadge count={cartCount} className="top-1.5 right-1" />
               </Link>
             </li>
             <li>

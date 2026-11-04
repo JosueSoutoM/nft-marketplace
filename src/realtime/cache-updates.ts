@@ -10,7 +10,7 @@ import type {
   OrderUpdatedEvent,
 } from '@/api/contracts'
 import { announce } from '@/lib/announcer'
-import { compareEth, formatEth } from '@/lib/eth'
+import { describeCartItemChange } from '@/lib/cart-changes'
 import { queryKeys } from '@/lib/query-keys'
 
 const TERMINAL_STATUSES: ReadonlyArray<Order['status']> = ['confirmed', 'declined']
@@ -58,33 +58,27 @@ export function isTerminalOrder(order: Order | undefined): boolean {
   return !!order && TERMINAL_STATUSES.includes(order.status)
 }
 
-function shouldAnnounceNftChange(queryClient: QueryClient, nftId: string, userId: string | null): boolean {
-  const inCart = queryClient.getQueryData<Cart>(queryKeys.cart(userId))?.items.some((item) => item.nftId === nftId) ?? false
-  const detailObserved = (queryClient.getQueryCache().find({ queryKey: queryKeys.nfts.detail(nftId) })?.getObserversCount() ?? 0) > 0
-  return inCart && !detailObserved
+function isDetailObserved(queryClient: QueryClient, nftId: string): boolean {
+  return (queryClient.getQueryCache().find({ queryKey: queryKeys.nfts.detail(nftId) })?.getObserversCount() ?? 0) > 0
 }
 
-function announceNftChange(previous: NftSummary | undefined, event: NftUpdatedEvent): void {
-  if (!previous) {
-    return
-  }
-  if (compareEth(previous.price, event.data.price) !== 0) {
-    announce(`O preço de ${previous.name} mudou para ${formatEth(event.data.price)}.`)
-    return
-  }
-  const before = previous.editions.find((edition) => edition.id === previous.defaultEditionId)
-  const after = event.data.editions.find((edition) => edition.id === previous.defaultEditionId)
-  if (before && after && before.available > 0 && after.available === 0) {
-    announce(`${previous.name} esgotou na edição ${after.label}.`)
-  } else if (before && after && before.available !== after.available) {
-    announce(`A disponibilidade de ${previous.name} foi atualizada: ${after.available} na edição ${after.label}.`)
-  }
+function describeCartChanges(cart: Cart | undefined, event: NftUpdatedEvent): string | null {
+  const messages = (cart?.items ?? []).flatMap((item) => {
+    if (item.nftId !== event.resource.id) {
+      return []
+    }
+    const edition = event.data.editions.find((entry) => entry.id === item.editionId)
+    const change = edition && describeCartItemChange(item, { unitPrice: edition.price, available: edition.available })
+    return change ? [`${item.name}, edição ${item.editionLabel}, no carrinho: ${change}`] : []
+  })
+  return messages.length > 0 ? messages.join(' ') : null
 }
 
 export function applyNftUpdated(queryClient: QueryClient, event: NftUpdatedEvent, userId: string | null): void {
   const nftId = event.resource.id
-  const previous = cachedNftSummaries(queryClient, nftId, userId)[0]
-  const relevant = shouldAnnounceNftChange(queryClient, nftId, userId)
+  const cartMessage = isDetailObserved(queryClient, nftId)
+    ? null
+    : describeCartChanges(queryClient.getQueryData<Cart>(queryKeys.cart(userId)), event)
 
   queryClient.setQueryData<Nft>(queryKeys.nfts.detail(nftId), (nft) => nft && patchNft(nft, event))
   const patchList = (data: NftListResponse | undefined) =>
@@ -99,8 +93,8 @@ export function applyNftUpdated(queryClient: QueryClient, event: NftUpdatedEvent
   void queryClient.invalidateQueries({ queryKey: queryKeys.cart(userId) })
   void queryClient.invalidateQueries({ queryKey: queryKeys.quotes.all(userId) })
 
-  if (relevant) {
-    announceNftChange(previous, event)
+  if (cartMessage) {
+    announce(cartMessage)
   }
 }
 
