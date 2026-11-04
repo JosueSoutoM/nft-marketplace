@@ -222,6 +222,11 @@ const create = apiRoute('orders.create', async ({ request }) => {
   if ('errors' in parsed) {
     return errorResponse(422, 'VALIDATION_ERROR', 'Revise os campos destacados.', parsed.errors)
   }
+  if (isScenario('form-validation')) {
+    return errorResponse(422, 'VALIDATION_ERROR', 'Revise os campos destacados.', {
+      'collector.referralCode': 'Código de indicação não reconhecido pelo programa de indicações.',
+    })
+  }
   const orderRequest = parsed.request
   const requestFingerprint = stableStringify(orderRequest)
   const db = getDb()

@@ -26,6 +26,7 @@ async function mergeVisitorCart(queryClient: QueryClient, userId: string): Promi
     if (!result) {
       return
     }
+    await queryClient.cancelQueries({ queryKey: queryKeys.cart(userId) })
     queryClient.setQueryData(queryKeys.cart(userId), result.cart)
     void queryClient.invalidateQueries({ queryKey: queryKeys.quotes.all(userId) })
     if (result.adjustments.length > 0) {
@@ -82,6 +83,7 @@ export function useLogout() {
         await logout()
       } finally {
         endSession('logout')
+        clearResumeDrafts()
       }
     },
     onSettled: () => announce('Você saiu da sua conta.'),

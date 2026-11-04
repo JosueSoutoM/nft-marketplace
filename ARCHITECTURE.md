@@ -17,6 +17,7 @@ src/
   assets/icons/           SVGs otimizados (Google e Facebook)
   components/
     cart/                 tela do carrinho: itens, quantidade, cupom, resumo, avisos, estados e contador
+    checkout/             pagamento: formulário do colecionador, carteiras, resumo da cotação, revisão, revalidação e envio idempotente
     catalog/              catálogo: busca, filtros, segmentos, ordenação, grade, estados e paginação
     favorites/            botão de favorito (card, detalhe desktop e detalhe mobile)
     home/                 seções da tela inicial: banner, NFT em destaque, chamadas e Diário da Cunhagem
@@ -102,7 +103,8 @@ Uma função tipada por endpoint, agrupadas por recurso: `auth.ts`, `nfts.ts`, `
 
 - `Authorization`: interceptor do Axios, a partir de `session-token.ts`.
 - `X-Guest-Cart-Id`: `guest-cart.ts` gera um UUID e o guarda em `localStorage` (`kurio.guest-cart-id`). As funções de carrinho e cotação enviam esse header apenas quando não há sessão. `mergeGuestCart()` envia o identificador no corpo e o apaga após o merge.
-- `Idempotency-Key`: `createOrder(body, { idempotencyKey })` exige a chave, e `createIdempotencyKey()` a gera. A chave pertence à tentativa de compra: reenvios da mesma tentativa reutilizam a chave; uma nova confirmação, depois de uma cotação nova, usa outra.
+- `Idempotency-Key`: `createOrder(body, { idempotencyKey })` exige a chave, e `createIdempotencyKey()` a gera. A chave pertence à tentativa de compra: reenvios da mesma tentativa reutilizam a chave; uma nova confirmação, depois de uma cotação nova, usa outra (ver "Pagamento").
+- Timeout de `createOrder`: 10 s (`ORDER_REQUEST_TIMEOUT_MS`), medido por um `setTimeout` que aborta a requisição e a converte em `ApiError` `TIMEOUT`. As demais chamadas usam o `timeout` nativo do Axios. O timer em JavaScript torna o timeout do pedido controlável pelo relógio do Playwright (`page.clock`), o que o timeout do XHR não permite.
 
 ### Endpoints
 
@@ -298,7 +300,7 @@ O payload trafega como objeto JSON no pacote de evento do Socket.IO (`42["nft.up
 
 ### Merge do carrinho
 
-- Depois do login ou do cadastro, `mergeGuestCart()` chama `POST /api/cart/merge` se existir `kurio.guest-cart-id`. A resposta substitui `['user', userId, 'cart']`, a cotação do usuário é invalidada e o identificador do visitante é apagado.
+- Depois do login ou do cadastro, `mergeGuestCart()` chama `POST /api/cart/merge` se existir `kurio.guest-cart-id`. Uma consulta do carrinho já em andamento é cancelada (ela poderia chegar depois e gravar o carrinho anterior ao merge) e a resposta substitui `['user', userId, 'cart']`, a cotação do usuário é invalidada e o identificador do visitante é apagado.
 - Cada item de `adjustments` vira uma frase numa notificação ("Neon Vessel #552 (edição 1/50) foi ajustado para 1 unidade (estoque disponível)."); itens esgotados aparecem como removidos.
 - Se o merge falhar, o login continua válido, uma notificação informa a falha e o identificador do visitante é mantido para a próxima tentativa.
 
@@ -312,11 +314,11 @@ O payload trafega como objeto JSON no pacote de evento do Socket.IO (`42["nft.up
 - Qualquer 401 `SESSION_EXPIRED` com o token atual (consulta da sessão, `beforeLoad`, timer do `expiresAt` ou qualquer endpoint privado) encerra a sessão com motivo `expired`.
 - `SessionWatcher` (montado no layout raiz) reage ao encerramento: chama os handlers registrados em `onSessionInterrupted`, mostra a notificação "Sua sessão expirou." e, quando o router está ocioso, leva a `/login?redirect=<onde estava>&reason=expired` com `replace`. Se a expiração aconteceu num `beforeLoad` privado, o próprio redirecionamento da rota já leva ao login com o destino pretendido. Com motivo `invalid`, a navegação só acontece em rota privada.
 - A tela de login mostra o aviso da expiração em `role="alert"`, dentro do diálogo, porque fora dele a região `aria-live` global fica com `aria-hidden` enquanto o diálogo está aberto. Ao entrar de novo, o usuário volta ao `redirect`.
-- Preservação de contexto (`src/lib/session-resume.ts`), pronta para o checkout: `onSessionInterrupted(handler)` registra um callback executado antes do redirecionamento, e `saveResumeDraft(key, userId, data)`, `readResumeDraft(key, userId)` e `clearResumeDraft(key)` guardam o rascunho em `sessionStorage` com o dono. O rascunho só é lido pelo mesmo usuário; o logout apaga todos, e um login apaga os de outros usuários.
+- Preservação de contexto (`src/lib/session-resume.ts`), usada pelo checkout (ver "Pagamento"): `onSessionInterrupted(handler)` registra um callback executado antes do redirecionamento, e `saveResumeDraft(key, userId, data)`, `readResumeDraft(key, userId)` e `clearResumeDraft(key)` guardam o rascunho em `sessionStorage` com o dono. O rascunho só é lido pelo mesmo usuário; o logout apaga todos, e um login apaga os de outros usuários.
 
 ### Logout e troca de usuário
 
-- "Sair" chama `POST /api/auth/logout` (que invalida o token e desconecta as carteiras) e, mesmo se a chamada falhar, encerra a sessão local. O resultado é anunciado ("Você saiu da sua conta.") e, se a tela atual é privada, o usuário vai para `/`.
+- "Sair" chama `POST /api/auth/logout` (que invalida o token e desconecta as carteiras) e, mesmo se a chamada falhar, encerra a sessão local e apaga todos os rascunhos de `session-resume` (inclusive o do checkout, com a chave de idempotência guardada). O `SessionWatcher` repete a limpeza ao receber o motivo `logout`, o que cobre também o logout feito em outra aba. O resultado é anunciado ("Você saiu da sua conta.") e, se a tela atual é privada, o usuário vai para `/`.
 - `installSessionCacheIsolation` (`src/lib/session-cache.ts`, instalado em `main.tsx` antes do primeiro render) observa o snapshot de forma síncrona. A cada troca de token (login, logout, expiração, troca de usuário ou outra aba), cancela e remove todas as queries `['user', <usuário anterior>]` e `['guest']` e remove as mutations já concluídas. Nada do usuário anterior sobrevive no cache quando o próximo usuário renderiza.
 - A consulta da sessão confere se a resposta pertence ao `userId` da chave e falha caso contrário, para que uma resposta atrasada não grave dados de um usuário na chave de outro.
 - A ponte de tempo real reinicia o socket a cada troca de token: os listeners do socket anterior são removidos e o novo socket se autentica com o token novo (ver "Ciclo de vida e troca de sessão"). Os testes conferem pelo servidor simulado que, depois do logout, a única conexão é de visitante e, depois do login de Bruno, só existe a conexão de Bruno.
@@ -413,6 +415,89 @@ Tela em `src/routes/cart.tsx` (`CartPage`, em `src/components/cart/`), dados em 
 ### Testes (`e2e/cart.spec.ts`)
 
 Adicionar pelo detalhe com edição e quantidade, notificação e contador; conflito de disponibilidade com o máximo; alterar quantidade pelos botões e pelo campo, limite de disponibilidade com motivo, remover com foco e estado vazio; cupom inválido, expirado (GENESIS25), válido (KURIO10) com desconto e total da API, persistência após refresh e remoção; carrinho do visitante após refresh e após login pelo "Conectar e finalizar" (redirect para `/checkout`); preço e disponibilidade alterados por `__mocks.updateNft` com aviso no item, anúncio, resumo atualizado e checkout bloqueado; falha de mutation sem perder itens e nova tentativa; erro ao carregar com "Tentar novamente"; skeleton sem deslocamento com latência lenta.
+
+## Pagamento
+
+Rota privada `/checkout` (`src/routes/_authenticated/checkout.tsx`), componentes em `src/components/checkout/` e regras puras em `src/lib/checkout.ts` (formulário, validação, mapeamento de `fieldErrors`, corpo do pedido e rascunho) e `src/lib/quote-changes.ts` (diferenças de cotação em texto). A tela nunca mostra compra confirmada: depois de criado, o pedido (`pending`) é gravado no cache e o usuário vai para `/orders/$orderId`, que acompanha o estado.
+
+Nada de carteira ou blockchain real: não há bibliotecas de carteira nem acesso a `window.ethereum`. Conexão, recusa, desconexão, pagamento e transação vêm da API simulada.
+
+### Dados e chaves
+
+| Dado | Hook | Chave | Observação |
+| --- | --- | --- | --- |
+| Carrinho | `useCart` | `['user', id, 'cart']` | Itens da compra e estado vazio |
+| Perfil | `useProfile` | `['user', id, 'profile']` | Preenche o formulário |
+| Carteiras | `useWallets` | `['user', id, 'wallets']` | Principal e secundária, com `connection` |
+| Redes | `useNetworks` | `['networks']` | Lista pública, `staleTime` de 5 min |
+| Cotação | `useCheckoutQuote` | `['user', id, 'quote', network]` | `POST /api/quotes`, `staleTime` 0: refeita ao entrar na tela e a cada troca de rede |
+
+- O conteúdo da tela fica num componente com `key={userId}`: se o usuário mudar sem desmontar a rota (outra aba), todo o estado local é descartado.
+- Conectar e desconectar (`useConnectWallet`, `useDisconnectWallet`) gravam a `WalletConnection` da resposta na carteira em cache; uma falha invalida a lista.
+
+### Formulário
+
+- Campos do Figma: nome de exibição, nome de usuário, rede, nome do perfil, endereço da carteira, ENS ou carteira secundária (opcional), tipo de carteira, código de indicação, e-mail, nome ENS (com o sufixo `.eth` fixo), "Usar outra carteira?" e observação (opcional, até 500 caracteres).
+- Preenchimento inicial: nome, usuário, e-mail e ENS do perfil; nome do perfil e código de indicação da carteira principal. Com uma carteira cadastrada selecionada, endereço, tipo e ENS secundário são os dela (somente leitura). "Usar outra carteira?" libera esses três campos e envia `payment.source = 'other'`.
+- A validação no cliente usa as mesmas funções dos mocks (`src/lib/validation.ts`). Cada campo tem `label` visível com asterisco (`aria-hidden`) e `aria-required`, `aria-invalid` e `aria-describedby` com a mensagem. No envio, um resumo (`role="alert"`) é anunciado ("Revise 3 campos: Nome de exibição, E-mail e Carteira.") e o foco vai para o primeiro campo inválido, na ordem visual. Carteira sem conexão na rede escolhida é um erro do campo "Carteira", e o foco vai para o botão "Conectar" da carteira selecionada.
+- `fieldErrors` da API (`collector.email`, `payment.address`, `note` etc.) são mapeados para os mesmos campos por `toCheckoutErrors`, com o mesmo resumo e foco; a revisão é fechada. Como a região `aria-live` global fica com `aria-hidden` enquanto o diálogo está aberto, o resumo é anunciado de novo depois que o diálogo fecha, junto com o foco no campo. Os itens do carrinho não mudam.
+
+### Carteira e rede
+
+- As carteiras cadastradas aparecem como rádios ("MetaMask · Principal", apelido, endereço abreviado e rede). Escolher uma carteira aplica a rede dela; a rede pode ser trocada no campo "Rede" (opções de `GET /api/networks`).
+- Cada carteira mostra o estado da conexão, ligado ao rádio por `aria-describedby`: "Desconectada", "Conectando…", "Conectada na rede Ethereum" ou "Conectada na rede Polygon. Conecte na rede Ethereum para pagar.". O botão alterna entre "Conectar" (`POST /api/wallets/:id/connect` com a rede escolhida) e "Desconectar". Sucesso e falha são anunciados.
+- Recusa (`wallet-rejected`): a mensagem da API aparece no cartão da carteira (`role="alert"`), com a orientação de confirmar na carteira e tentar de novo; o estado continua "Desconectada".
+- Sem carteira cadastrada: aviso com o link "Cadastrar carteira" (`/wallets`); "Usar outra carteira?" continua disponível. No mobile, "Trocar carteira" também leva a `/wallets`.
+
+### Cotação e resumo
+
+- O resumo (itens com quantidade e total da linha, subtotal, desconto, taxa de rede, "Taxa estimada", total e "Cotação válida até HH:MM") mostra exatamente a cotação da API, sem recálculo no cliente. Avisos por linha vêm de `issue` (esgotada, disponibilidade, preço alterado).
+- Enquanto a cotação carrega, as linhas e os valores são skeletons com as mesmas dimensões finais (uma linha por item do carrinho); o teste compara posição e altura. Ao recalcular, o resumo fica com opacidade reduzida e `aria-busy`. Falha: mensagem e "Tentar novamente".
+- Cupom: "Tem um código promocional? Aplique aqui" leva ao carrinho, onde o cupom é aplicado. O cupom aplicado ou o erro do cupom (`couponError`) aparece no resumo.
+
+### Revisão
+
+"Confirmar compra" valida o formulário e abre o diálogo "Revise sua compra" (shadcn/ui `Dialog`: foco preso, Esc fecha e o foco volta ao botão). Ele mostra os dados do colecionador, carteira, endereço, conexão, rede, itens, totais, cotação (id, versão e validade) e a observação. O envio só acontece por "Confirmar e enviar pedido" dentro do diálogo. Durante o envio, o diálogo não fecha.
+
+### Revalidação
+
+`useAcceptedQuote` guarda a cotação aceita (a que o usuário está vendo na revisão) e compara com a cotação atual do cache:
+
+- Uma cotação nova com a mesma `version` tem o mesmo conteúdo (a API só incrementa a versão quando itens, preços, disponibilidade, cupom, rede ou taxa mudam) e substitui a aceita sem pedir nada.
+- Versão diferente na mesma rede significa mudança. Ela chega de três formas: `nft.updated` de qualquer NFT invalida a cotação (Socket.IO, `src/realtime/cache-updates.ts`) e a consulta é refeita; `409 QUOTE_OUTDATED` ou `409 AVAILABILITY_CONFLICT` trazem `details.currentQuote`, que é gravada no cache, e `details.quoteChanges`; ou a cotação expira.
+- A mudança aparece como lista de/para (`describeQuoteChanges`): "Emerald Ape #042 (edição 1/50): preço de 1.19 ETH para 1.31 ETH.", "…: a edição esgotou.", "Taxa de rede: de X para Y.", "Cupom: de KURIO10 para nenhum." e "Total: de 2.396 ETH para 2.636 ETH.". Quando a API informa as mudanças, a lista usa `quoteChanges`; nos demais casos, a diferença é calculada entre as duas cotações.
+- Na revisão, "Confirmar e enviar pedido" fica com `aria-disabled` e ignora cliques enquanto a cotação aceita estiver desatualizada. "Revisar nova cotação" troca os valores do diálogo pelos novos e devolve o foco ao título; só então a compra pode ser confirmada. Fora da revisão, o aviso aparece acima do resumo, que já mostra a nova cotação.
+- Expiração: um timer no `expiresAt` da cotação aceita pede uma nova cotação. No formulário, ela substitui a anterior se o conteúdo for o mesmo; na revisão, a nova cotação sempre exige "Revisar nova cotação".
+- Itens esgotados ou acima do disponível (`purchasable: false`) bloqueiam "Confirmar compra" e o envio, com o link "Ajustar o carrinho". O pedido nunca é enviado com uma cotação que o usuário não aceitou, e a API ainda revalida tudo no `POST /api/orders`.
+
+### Idempotência e envio
+
+`useOrderSubmission` (`src/components/checkout/use-order-submission.ts`):
+
+- A tentativa de compra é `{ key, fingerprint, request, pending }`. `fingerprint` é o JSON canônico do corpo (`stableStringify`, o mesmo dos mocks). Ao confirmar, se a tentativa guardada tem o mesmo fingerprint, a chave é reaproveitada; se o conteúdo mudou (outra cotação confirmada, outros dados, outra carteira ou rede), uma chave nova é gerada com `crypto.randomUUID()`.
+- A tentativa fica no rascunho do usuário em `sessionStorage` (ver "Rascunho"), então sobrevive ao refresh.
+- Reentrada: um `ref` impede um segundo envio enquanto houver um em andamento, e o botão fica com `aria-disabled`, `aria-busy` e o texto "Enviando pedido…". Clique duplo gera uma única requisição.
+- Falha transitória (`TIMEOUT`, `NETWORK_ERROR`, 5xx): a tela informa "Estamos verificando o seu pedido. Não é preciso enviar de novo…" e reenvia o mesmo corpo com a mesma chave depois de 1 s, 2 s e 4 s. A API devolve o pedido já criado (`Idempotent-Replayed`), sem duplicar. Esgotadas as tentativas, aparece "Verificar novamente", que repete com a mesma chave.
+- Refresh com tentativa pendente: ao abrir a tela, a tentativa é reenviada com a mesma chave e a tela mostra "Verificando o seu pedido" até a resposta. Isso recupera o pedido mesmo que o carrinho já tenha sido esvaziado pela confirmação.
+- Rejeição definitiva (409, 422, 404): a tentativa fica marcada como não pendente (a API não registra chaves de tentativas rejeitadas) e a tela trata o erro: revalidação, campos, carteira (`WALLET_NOT_CONNECTED` invalida as carteiras e foca a conexão) ou mensagem no diálogo.
+- Sucesso: o pedido vai para `['user', id, 'orders', 'detail', orderId]`, as listas de pedidos são invalidadas, o rascunho é apagado, a criação é anunciada ("Pedido order-0001 enviado. Aguardando a confirmação do pagamento.") e a navegação vai para `/orders/$orderId` com `replace`.
+- Em qualquer erro, os itens do carrinho permanecem: o cliente não altera o carrinho, e a API só remove itens na confirmação do pedido.
+
+### Rascunho e expiração de sessão
+
+- `useCheckoutDraft` guarda valores, carteira escolhida, rede e tentativa com `saveResumeDraft('checkout', userId, …)` a cada mudança, e também no `onSessionInterrupted`, que o `SessionWatcher` chama antes de levar ao login. O rascunho tem o `userId` do dono.
+- Expiração durante o checkout: o próximo pedido à API (por exemplo, conectar a carteira) recebe 401 `SESSION_EXPIRED`, a sessão é encerrada e o usuário vai para `/login?redirect=/checkout&reason=expired`. Ao entrar de novo com o mesmo usuário, `readResumeDraft` devolve o rascunho: formulário, carteira e rede voltam, com o aviso "Recuperamos os dados que você tinha preenchido nesta compra.".
+- Outro usuário: `readResumeDraft` só devolve rascunhos do mesmo `userId`, e o login apaga os rascunhos de outros usuários. O checkout de Bruno parte do perfil e das carteiras dele.
+- Logout explícito ("Sair"): apaga o rascunho e a tentativa (chave de idempotência) do usuário, porque são dados privados. Ao entrar de novo, o checkout parte do perfil. Só a expiração (e a sessão recusada) preserva o rascunho para a retomada; o efeito que grava o rascunho só grava enquanto a sessão do dono estiver ativa, então nada é regravado depois do logout.
+- Pedido pendente sem rascunho: a recuperação não depende só do `sessionStorage`. O checkout consulta `GET /api/orders?status=pending` (`usePendingOrders`, chave `['user', id, 'orders', 'list', { status: 'pending' }]`, invalidada pelo `order.updated`) e, se houver pedido aguardando liquidação, mostra "O pedido order-0001 está aguardando a confirmação do pagamento." com o link "Acompanhar pedido". A tela do pedido usa a mesma API.
+
+### Estados
+
+- Carregando: skeleton do formulário e do resumo. Carrinho vazio: "Seu carrinho está vazio" com "Explorar o catálogo". Erro do carrinho: mensagem e "Tentar novamente". Erro das carteiras: mensagem e "Tentar novamente".
+
+### Testes (`e2e/checkout.spec.ts`)
+
+Preenchimento pelo perfil e validação com resumo e foco; revisão com dados, carteira, rede, itens e totais, Esc com retorno do foco e envio até `/orders/order-0001`; recusa da carteira (`wallet-rejected`), conexão e desconexão; preço alterado por `__mocks.updateNft` durante a revisão, com de/para, bloqueio do envio e nova confirmação; `price-changed` (409 com chave nova para a nova cotação e um único pedido); `edition-sold-out` sem perder itens e compra depois de ajustar o carrinho; clique duplo com uma requisição e um pedido; `order-timeout` com `page.clock` (timeout aos 10 s, nova tentativa com a mesma chave e o mesmo pedido); expiração com restauração do rascunho; logout que apaga o rascunho e a chave guardada, sem restauração ao entrar de novo; erro de campo da API no pedido (`form-validation`) com foco, anúncio e carrinho intacto; isolamento ana → bruno; carrinho vazio; skeleton da cotação sem deslocamento com latência lenta.
 
 ## Estado do catálogo na URL
 
@@ -619,7 +704,7 @@ Os tipos dos eventos vêm de `src/api/contracts/events.ts`. Assinatura: `subscri
 | `unauthorized` | Endpoints privados respondem 401 `UNAUTHENTICATED`. |
 | `forbidden` | Endpoints privados respondem 403 `FORBIDDEN`. |
 | `register-conflict` | O cadastro responde 409 `EMAIL_TAKEN` para qualquer e-mail. |
-| `form-validation` | Formulários válidos no cliente recebem 422 com `fieldErrors` do servidor: cadastro e perfil (`username`), senha (`newPassword`) e carteiras (`address`). |
+| `form-validation` | Formulários válidos no cliente recebem 422 com `fieldErrors` do servidor: cadastro e perfil (`username`), senha (`newPassword`), carteiras (`address`) e pedido (`collector.referralCode`, sem registrar a chave de idempotência). |
 | `coupon-invalid` | Qualquer cupom responde 422 `COUPON_INVALID`; a cotação de um carrinho com cupom traz `couponError` do mesmo tipo. |
 | `coupon-expired` | Qualquer cupom responde 422 `COUPON_EXPIRED`; idem na cotação. |
 | `price-changed` | Na primeira tentativa de pedido após ativar o cenário, o preço da edição do primeiro item sobe 10% (com `nft.updated`) e o pedido responde 409 `QUOTE_OUTDATED` com a nova cotação. A tentativa seguinte, com a nova cotação, é aceita. |
@@ -764,6 +849,16 @@ E-mail e telefone de contato do rodapé são fictícios e aparecem como texto, s
 - O título "Resumo da carteira" e o rótulo "Código promocional" ficam ocultos visualmente no mobile, como no frame, mas continuam disponíveis para leitores de tela. No desktop, o título "Carrinho de NFTs" é o `h1` oculto visualmente, porque o frame mostra só a trilha.
 - Estados sem frame (cupom aplicado, erro do cupom, aviso de preço ou disponibilidade, item esgotado, erro de mutation, vazio e erro) seguem os tokens: Coral para erros, Accent para avisos, Surface Raised para o cupom aplicado.
 - "Colecionadores também viram" usa os NFTs em alta da API, por isso difere dos itens do Figma. Aparece também no mobile, abaixo do resumo.
+
+### Pagamento
+
+- Desktop: o Figma não desenha a revisão. "Confirmar compra" abre o diálogo "Revise sua compra", e o envio acontece no botão "Confirmar e enviar pedido" dentro dele, para que a revisão seja uma etapa explícita.
+- "Carteira e rede": o Figma mostra opções "MetaMask" e "Coinbase Wallet" e uma faixa "METAMASK · WALLETCONNECT · COINBASE". Aqui as opções são as carteiras cadastradas do usuário (as de Ana são MetaMask e Coinbase Wallet), com apelido, endereço, rede, estado da conexão e o botão Conectar/Desconectar; a faixa virou o selo "Carteiras compatíveis". Cada cartão fica mais alto que no frame para caber o estado da conexão.
+- O campo "Nome ENS" usa um sufixo fixo `.eth` no lugar do seletor do Figma, porque só existe esse domínio. O campo "ENS ou carteira secundária" não tem rótulo visível, como no Figma; o rótulo fica visualmente oculto.
+- A rede é escolhida no campo "Rede" do formulário (desktop e mobile). Ao escolher uma carteira, a rede dela é aplicada.
+- Mobile: o frame mostra apenas carteiras, total e "Confirmar compra". O formulário e o resumo foram incluídos acima das carteiras (os dados são obrigatórios), e "Carteira conectada" e "Trocar carteira" seguem o frame. A lista "Carteira e rede" de provedores do frame mobile não foi reproduzida: as opções são as carteiras cadastradas.
+- Itens do resumo: além de "ID do token", aparece a edição, porque o mesmo NFT pode estar em edições diferentes. O desconto mostra a unidade ("(-) 0.00 ETH").
+- Estados sem frame (aviso de mudança da cotação, erros, verificação do pedido, carrinho vazio) seguem os tokens: Coral para erros, Accent para avisos.
 
 ### Login e cadastro
 

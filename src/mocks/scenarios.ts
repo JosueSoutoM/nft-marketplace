@@ -139,7 +139,7 @@ export const SCENARIOS: Record<ScenarioName, ScenarioDefinition> = {
   },
   'form-validation': {
     label: 'Validação do servidor',
-    description: 'Formulários válidos no cliente recebem 422 com fieldErrors do servidor (cadastro, perfil, senha e carteiras).',
+    description: 'Formulários válidos no cliente recebem 422 com fieldErrors do servidor (cadastro, perfil, senha, carteiras e pedido).',
   },
   'coupon-invalid': {
     label: 'Cupom inválido',

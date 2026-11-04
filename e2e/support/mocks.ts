@@ -12,6 +12,11 @@ export type Scenario =
   | 'register-conflict'
   | 'form-validation'
   | 'favorite-failure'
+  | 'wallet-rejected'
+  | 'price-changed'
+  | 'edition-sold-out'
+  | 'order-timeout'
+  | 'payment-declined'
 
 export type Latency = 'none' | 'fixed' | 'slow' | 'variable'
 

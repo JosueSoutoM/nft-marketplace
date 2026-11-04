@@ -57,6 +57,17 @@ export function useCartQuote(cart: Cart | undefined) {
   })
 }
 
+export function useCheckoutQuote(cart: Cart | undefined, network: NetworkId | null) {
+  const { userId } = useSession()
+  return useQuery({
+    queryKey: queryKeys.quotes.detail(userId, network ?? CART_QUOTE_NETWORK),
+    queryFn: ({ signal }) => createQuote({ network: network ?? CART_QUOTE_NETWORK }, { signal }),
+    enabled: !!cart && cart.items.length > 0 && network !== null,
+    staleTime: 0,
+    refetchOnWindowFocus: false,
+  })
+}
+
 type CartSuccessHandler<TVariables> = (cart: Cart, variables: TVariables) => void
 
 function useCartMutation<TVariables>(
