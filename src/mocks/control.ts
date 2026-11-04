@@ -1,4 +1,4 @@
-import type { EthAmount, Nft, Order } from '@/api/contracts'
+import type { EthAmount, Nft, Order, ServerEvent } from '@/api/contracts'
 import { resetDatabase } from './db'
 import { expireAllSessions } from './db/sessions'
 import {
@@ -14,6 +14,15 @@ import {
   type ScenarioName,
 } from './scenarios'
 import { updateNftEditions } from './services/catalog'
+import {
+  dropRealtimeConnections,
+  getRealtimeServerStatus,
+  refuseRealtimeConnections,
+  replayLastRealtimeEvent,
+  resetRealtime,
+  sendStaleRealtimeEvent,
+  type RealtimeServerStatus,
+} from './socket/server'
 import { clearSettlementTimers, settleOrder } from './services/orders'
 
 export interface NftUpdate {
@@ -33,6 +42,11 @@ export interface MockControls {
   getSettings: () => MockSettings
   updateNft: (nftId: string, update: NftUpdate) => Nft
   advanceOrder: (orderId: string, status?: 'confirmed' | 'declined') => Order
+  dropRealtime: () => number
+  refuseRealtime: (seconds: number) => void
+  replayLastEvent: () => ServerEvent | null
+  sendStaleEvent: () => ServerEvent | null
+  getRealtimeStatus: () => RealtimeServerStatus
 }
 
 declare global {
@@ -43,6 +57,7 @@ declare global {
 
 export async function resetMocks(): Promise<void> {
   clearSettlementTimers()
+  resetRealtime()
   resetSettings()
   await resetDatabase()
 }
@@ -59,5 +74,10 @@ export function installMockControls(): void {
     getSettings,
     updateNft: (nftId, update) => structuredClone(updateNftEditions(nftId, [update])),
     advanceOrder: (orderId, status) => structuredClone(settleOrder(orderId, status)),
+    dropRealtime: dropRealtimeConnections,
+    refuseRealtime: refuseRealtimeConnections,
+    replayLastEvent: replayLastRealtimeEvent,
+    sendStaleEvent: sendStaleRealtimeEvent,
+    getRealtimeStatus: () => structuredClone(getRealtimeServerStatus()),
   }
 }

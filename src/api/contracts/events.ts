@@ -2,7 +2,15 @@ import type { IsoDateTime } from './common'
 import type { NftEdition } from './nfts'
 import type { Order } from './orders'
 
-export interface RealtimeEvent<TType extends string, TResource extends string, TData> {
+export const REALTIME_PATH = '/realtime'
+export const REALTIME_EVENT_TYPES = ['nft.updated', 'order.updated'] as const
+export type RealtimeEventType = (typeof REALTIME_EVENT_TYPES)[number]
+
+export interface RealtimeAuth {
+  token?: string
+}
+
+export interface RealtimeEvent<TType extends RealtimeEventType, TResource extends string, TData> {
   id: string
   type: TType
   resource: {
@@ -10,6 +18,7 @@ export interface RealtimeEvent<TType extends string, TResource extends string, T
     id: string
   }
   version: number
+  userId: string | null
   occurredAt: IsoDateTime
   data: TData
 }

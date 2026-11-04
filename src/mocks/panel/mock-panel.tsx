@@ -18,6 +18,7 @@ import {
   type LatencyMode,
   type ScenarioName,
 } from '../scenarios'
+import { RealtimeTools } from './realtime-tools'
 
 export function MockPanel() {
   const settings = useSyncExternalStore(subscribeSettings, getSettings)
@@ -60,7 +61,7 @@ export function MockPanel() {
             Mocks: {scenario.label}
           </Button>
         </PopoverTrigger>
-        <PopoverContent align="start" side="top" className="w-80 gap-4">
+        <PopoverContent align="start" side="top" className="max-h-[85dvh] w-80 gap-4 overflow-y-auto">
           <PopoverHeader>
             <PopoverTitle>Simulação da API</PopoverTitle>
             <PopoverDescription>Cenários e latência aplicados pelo MSW a todas as requisições.</PopoverDescription>
@@ -102,7 +103,9 @@ export function MockPanel() {
             {latencyLocked && <p className="text-caption text-text-secondary">Definida pelo cenário atual.</p>}
           </div>
 
-          <div className="flex flex-wrap gap-2">
+          <RealtimeTools onStatus={setStatus} />
+
+          <div className="flex flex-wrap gap-2 border-t border-border-soft pt-3">
             <Button type="button" variant="outline" size="sm" onClick={handleExpireSessions}>
               Expirar sessões
             </Button>

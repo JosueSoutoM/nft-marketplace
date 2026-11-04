@@ -1,7 +1,7 @@
 import axios from 'axios'
 import { API_BASE_PATH } from './contracts'
 import { toApiError } from './errors'
-import { getSessionToken } from './session-token'
+import { endSession, getSessionToken } from './session-token'
 
 const DEFAULT_TIMEOUT_MS = 10_000
 
@@ -25,5 +25,18 @@ http.interceptors.request.use((config) => {
 
 http.interceptors.response.use(
   (response) => response,
-  (error: unknown) => Promise.reject(toApiError(error)),
+  (error: unknown) => {
+    const apiError = toApiError(error)
+    const sentAuthorization = axios.isAxiosError(error) ? error.config?.headers?.get('Authorization') : null
+    const currentToken = getSessionToken()
+    const rejectedCurrentSession =
+      apiError.status === 401 &&
+      (apiError.code === 'SESSION_EXPIRED' || apiError.code === 'UNAUTHENTICATED') &&
+      currentToken !== null &&
+      sentAuthorization === `Bearer ${currentToken}`
+    if (rejectedCurrentSession) {
+      endSession(apiError.code === 'SESSION_EXPIRED' ? 'expired' : 'invalid')
+    }
+    return Promise.reject(apiError)
+  },
 )

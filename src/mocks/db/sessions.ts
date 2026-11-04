@@ -39,6 +39,11 @@ export async function findSession(token: string): Promise<SessionLookup> {
   return { status: 'valid', session, user }
 }
 
+export function findActiveUserIdByTokenHash(tokenHash: string): string | null {
+  const session = getDb().sessions.find((record) => record.tokenHash === tokenHash)
+  return session && Date.parse(session.expiresAt) > Date.now() ? session.userId : null
+}
+
 export async function deleteSession(token: string): Promise<void> {
   const db = getDb()
   const tokenHash = await hashToken(token)

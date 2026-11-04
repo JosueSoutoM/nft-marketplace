@@ -6,6 +6,7 @@ import { SiteFooter } from '@/components/layout/site-footer'
 import { SiteHeader } from '@/components/layout/site-header'
 import { MAIN_CONTENT_ID, SkipLink } from '@/components/layout/skip-link'
 import { Toaster } from '@/components/ui/sonner'
+import { LiveAnnouncer } from '@/components/live-announcer'
 import { cn } from '@/lib/utils'
 
 export interface RouterContext {
@@ -31,6 +32,7 @@ function RootLayout() {
       </main>
       <SiteFooter />
       {!hideMobileTabBar && <MobileTabBar />}
+      <LiveAnnouncer />
       <Toaster position="bottom-right" mobileOffset={{ bottom: hideMobileTabBar ? 16 : 120 }} />
     </div>
   )

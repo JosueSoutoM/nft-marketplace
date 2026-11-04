@@ -11,19 +11,20 @@ public/
   images/nfts/            imagens dos NFTs em WebP, servidas pela API simulada
   mockServiceWorker.js    service worker do MSW (gerado por `msw init`)
 src/
-  api/                    cliente Axios, ApiError, token da sessão e funções REST por recurso
+  api/                    cliente Axios, ApiError, sessão armazenada e funções REST por recurso
     contracts/            tipos e constantes compartilhados entre cliente e mocks
   assets/icons/           SVGs otimizados (Google e Facebook)
   components/
     icons/                ícones de redes sociais em SVG inline
     layout/               header, footer, barra inferior mobile, 404 e utilitários de layout
     ui/                   componentes shadcn/ui adaptados aos tokens
-  lib/                    QueryClient, aritmética de ETH, utilitários e saneamento de redirect
-  mocks/                  API simulada (MSW): banco, fixtures, cenários, handlers e painel
+  lib/                    QueryClient, chaves de query, anunciador aria-live, aritmética de ETH e utilitários
+  mocks/                  API simulada (MSW): banco, fixtures, cenários, handlers, servidor Socket.IO e painel
+  realtime/               cliente Socket.IO, aplicação de eventos no cache e estado da conexão
   routes/                 rotas do TanStack Router (uma rota por arquivo)
     _authenticated/       rotas privadas agrupadas em layout próprio
   index.css               tokens do design system e estilos globais
-  main.tsx                inicialização dos mocks, Query e Router
+  main.tsx                inicialização dos mocks, Query, ponte de tempo real e Router
   router.ts               instância do router e tipagem de `staticData`
   routeTree.gen.ts        árvore de rotas gerada pelo plugin do TanStack Router
 ```
@@ -223,11 +224,50 @@ pending ──(liquidação)──▶ confirmed   (terminal)
 
 ## Eventos Socket.IO
 
-_A preencher._
+### Eventos
+
+| Evento | Destinatários | `data` | Efeito no cliente |
+| --- | --- | --- | --- |
+| `nft.updated` | Todas as conexões, inclusive visitantes | `editions`, `price`, `compareAtPrice` | Atualiza o detalhe, os itens das listas e os favoritos em cache; invalida carrinho e cotação |
+| `order.updated` | Somente a conexão autenticada como dona do pedido | `Order` completo | Atualiza o pedido em cache; invalida as listas de pedidos; na confirmação, invalida carrinho e cotação |
+
+Os dois eventos têm o mesmo envelope (`src/api/contracts/events.ts`):
+
+```ts
+interface RealtimeEvent {
+  id: string
+  type: 'nft.updated' | 'order.updated'
+  resource: { type: 'nft' | 'order'; id: string }
+  version: number
+  userId: string | null
+  occurredAt: string
+  data: ...
+}
+```
+
+- `id`: identidade estável do evento (UUID). Reenvios do mesmo evento repetem o `id`.
+- `resource`: tipo e identificador do recurso afetado.
+- `version`: versão do recurso depois da mudança (`Nft.version` ou `Order.version`), estritamente crescente por recurso.
+- `userId`: dono do pedido em `order.updated`; `null` em `nft.updated`.
+
+O payload trafega como objeto JSON no pacote de evento do Socket.IO (`42["nft.updated",{...}]`).
+
+### Conexão e autenticação
+
+- Cliente: `socket.io-client` com `path: '/realtime'`, `transports: ['websocket']`, `autoConnect: false` e `forceNew: true`. A URL é a da própria página, então funciona igual em desenvolvimento, preview e Vercel.
+- O token da sessão vai no payload `auth` do pacote CONNECT do Socket.IO (`40{"token":"…"}`). Sem sessão, `auth` é `{}` e a conexão é de visitante.
+- A alternativa seria a query string (`?token=`), que o binding também permitiria ler pela URL. Ela foi descartada porque coloca o token na URL, onde fica sujeito a logs e histórico. O `auth` é o mecanismo previsto pelo Socket.IO para credenciais e é reenviado a cada reconexão.
+- O servidor simulado guarda apenas o SHA-256 do token. Quando o token é desconhecido, a conexão é tratada como visitante, não recusada.
+- O filtro por usuário é feito a cada evento, no momento da entrega, porque o binding não tem rooms: um `order.updated` só é enviado se o hash do token da conexão corresponder a uma sessão ativa, não expirada, do dono do pedido. Uma conexão cuja sessão expirou ou saiu deixa de receber eventos privados imediatamente, mesmo antes de reconectar.
 
 ## Sessão
 
-_A preencher._
+Parte implementada até aqui (as telas e hooks de sessão virão nas próximas tarefas):
+
+- `src/api/session-token.ts` guarda `{ token, userId }` em `localStorage` (`kurio.session`) e expõe um snapshot reativo (`subscribeSession`, `getSessionSnapshot`) com o motivo do último encerramento (`logout`, `expired` ou `invalid`).
+- O interceptor de resposta do Axios encerra a sessão quando uma requisição feita com o token atual recebe 401 `SESSION_EXPIRED` (motivo `expired`) ou `UNAUTHENTICATED` (motivo `invalid`). Erros de requisições feitas com um token antigo são ignorados.
+- O evento `storage` do navegador propaga login e logout entre abas da mesma origem.
+- A ponte de tempo real reage a qualquer mudança desse snapshot: login, logout, troca de usuário e expiração.
 
 ## Carrinho
 
@@ -239,7 +279,39 @@ _A preencher._
 
 ## Reconciliação REST × Socket.IO
 
-_A preencher._
+A API REST é a fonte da verdade; os eventos só aceleram a atualização do cache. Toda a lógica fica em `src/realtime/`; componentes não escutam o socket diretamente.
+
+### Ciclo de vida e troca de sessão
+
+- Uma única instância de `RealtimeClient` (`src/realtime/client.ts`). `RealtimeBridge` (montado em `main.tsx`, dentro do `QueryClientProvider`) chama `start` com `{ token, userId }` da sessão atual e `stop` no cleanup do efeito.
+- Toda mudança de identidade (login, logout, troca de usuário, expiração) passa por `stop` e `start`: os listeners do socket anterior são removidos (`removeAllListeners`), o socket é desconectado, os ids vistos e as versões de pedidos são descartados e um socket novo é criado com a identidade nova.
+- Cada `start` recebe um número de geração. Eventos e mudanças de estado de um socket de geração anterior são descartados, inclusive se o `import()` do `socket.io-client` terminar depois de uma troca de sessão.
+- Além do filtro do servidor, o cliente descarta qualquer evento privado cujo `userId` não seja o da sessão atual.
+
+### Deduplicação e versão
+
+- Ids de eventos já recebidos ficam num conjunto limitado aos 500 mais recentes; um evento repetido é ignorado.
+- Para cada recurso (`nft:<id>`, `order:<id>`), a versão conhecida é a maior entre a última aplicada por evento e a que está no cache (detalhe, listas e favoritos para NFTs; detalhe para pedidos). Eventos com versão menor ou igual são ignorados, então um evento antigo nunca regride um estado mais recente nem reaplica efeitos (anúncios e invalidações).
+- Pedidos `confirmed` ou `declined` em cache são terminais: nenhum evento os altera.
+- Os patches no cache também comparam versões item a item, para não sobrescrever um dado mais novo que tenha chegado por REST.
+
+### Atualização do cache
+
+As chaves vêm de `src/lib/query-keys.ts`. Dados privados ficam sob `['user', userId, …]` e os do visitante sob `['guest', …]`, o que permite limpar tudo de um usuário por prefixo e impede que caches de usuários diferentes se misturem.
+
+- `nft.updated`: atualiza `['nfts', 'detail', id]`, os itens correspondentes em todas as `['nfts', 'list', params]` e nos favoritos do usuário; invalida o carrinho e a cotação do dono atual (`['user', id, 'cart']` ou `['guest', 'cart']`), que são recalculados pela API.
+- `order.updated`: substitui `['user', userId, 'orders', 'detail', id]` e invalida as listas de pedidos. Na confirmação, invalida também carrinho e cotação, porque a API removeu os itens comprados.
+
+### Reconexão
+
+- O socket reconecta sozinho, com atraso entre 0,5 e 4 s. Durante a espera, o estado fica `reconnecting`.
+- A cada reconexão (todo `connect` depois do primeiro), as queries ativas de NFTs, carrinho, cotação e pedidos são invalidadas e refeitas pela API, cobrindo eventos perdidos durante a queda.
+- Pedidos pendentes são retomados pela API (`GET /api/orders/:id` ou `GET /api/orders?status=pending`) e pelo próximo `order.updated`.
+
+### Estado e feedback
+
+- `useRealtimeStatus()` devolve `idle`, `connecting`, `connected`, `reconnecting` ou `disconnected`.
+- `announce(message)` (`src/lib/announcer.ts`) publica mensagens numa região `aria-live="polite"` única (`LiveAnnouncer`, no layout raiz). O tempo real anuncia mudança de preço ou esgotamento de NFTs que estão no carrinho ou com o detalhe aberto ("O preço de Emerald Ape #042 mudou para 1.31 ETH.") e a confirmação ou recusa do pagamento.
 
 ## Mocks e cenários
 
@@ -254,6 +326,7 @@ src/mocks/
   endpoints.ts        identificador, método, caminho e exigência de sessão de cada endpoint
   scenarios.ts        cenários, latência, TTL de sessão e persistência dessas configurações
   control.ts          objeto global window.__mocks
+  socket/             servidor Socket.IO simulado (ws.link + @mswjs/socket.io-binding) e ferramentas de teste
   changes.ts          barramento interno de mudanças (nft.updated e order.updated)
   responses.ts        respostas JSON, erro padronizado e falha de rede
   hex.ts              hex determinístico (contratos e hashes de transação)
@@ -307,9 +380,18 @@ interface RealtimeEvent {
 - `id`: UUID único do evento.
 - `version`: versão do recurso depois da mudança (`Nft.version` ou `Order.version`), sempre crescente.
 - `data`: em `nft.updated`, `editions`, `price` e `compareAtPrice`; em `order.updated`, o `Order` completo.
-- `userId`: dono do pedido, ou `null` para NFTs (evento público).
+- `userId`: dono do pedido, ou `null` para NFTs (evento público). O mesmo valor está em `event.userId`.
 
-Os tipos dos eventos vêm de `src/api/contracts/events.ts`. Assinatura: `subscribeChanges(listener)`, que devolve a função de cancelamento. A ligação com o Socket.IO fica para a próxima tarefa.
+Os tipos dos eventos vêm de `src/api/contracts/events.ts`. Assinatura: `subscribeChanges(listener)`, que devolve a função de cancelamento.
+
+### Servidor Socket.IO simulado
+
+`src/mocks/socket/server.ts` registra `ws.link('/realtime/')`, que o MSW resolve contra a origem da página (ws ou wss), e envolve cada conexão com `toSocketIo` do `@mswjs/socket.io-binding`.
+
+- Cada conexão se inscreve no barramento ao abrir e cancela a inscrição ao fechar; o mesmo acontece com o ping.
+- O servidor envia o ping do Engine.IO (`2`) a cada 25 s, o intervalo anunciado no handshake do binding. Sem ele, o cliente fecharia a conexão por ping timeout após 30 s.
+- O token é lido da mensagem crua do pacote CONNECT (`40{...}`), porque o binding só decodifica pacotes de evento.
+- Ferramentas de teste (painel, seção "Tempo real", e `window.__mocks`): derrubar as conexões (o servidor fecha o websocket com 1012 e o cliente reconecta), recusar novas conexões por N segundos (cada tentativa é fechada com 1013, simulando queda de rede), reenviar o último evento com o mesmo `id` (duplicata) e enviar um evento com versão anterior à atual (para NFTs, com preço 0.01 ETH; para pedidos, com status `pending`).
 
 ### Credenciais fictícias
 
@@ -359,7 +441,7 @@ Os cenários de falha genérica (`network-error`, `server-error`, `service-unava
 
 - Query string: `?scenario=<nome>&latency=<modo>` em qualquer URL. Os valores são aplicados, persistidos e removidos da URL antes de o router iniciar.
 - `localStorage`: chave `kurio.mocks.settings.v1` (`{ scenario, latency, sessionTtlSeconds }`). A escolha sobrevive ao refresh.
-- Painel: botão "Mocks" no canto inferior esquerdo, com seleção de cenário e latência, "Expirar sessões" e "Restaurar dados". Ele só é carregado quando `VITE_ENABLE_MOCKS` é `"true"`, em um chunk separado.
+- Painel: botão "Mocks" no canto inferior esquerdo, com seleção de cenário e latência; na seção "Tempo real", o estado do cliente, as conexões vistas pelo servidor, o último evento e as ferramentas do socket; e os botões "Expirar sessões" e "Restaurar dados". Ele só é carregado quando `VITE_ENABLE_MOCKS` é `"true"`, em um chunk separado.
 - Testes: `window.__mocks`, disponível somente depois que o service worker assume as requisições:
 
 ```ts
@@ -373,6 +455,11 @@ window.__mocks.updateNft('emerald-ape-042', { price: '1.29' })
 window.__mocks.updateNft('neon-vessel-552', { editionId: 'limited-10', available: 0 })
 window.__mocks.advanceOrder('order-0001')
 window.__mocks.advanceOrder('order-0001', 'declined')
+window.__mocks.dropRealtime()
+window.__mocks.refuseRealtime(10)
+window.__mocks.replayLastEvent()
+window.__mocks.sendStaleEvent()
+window.__mocks.getRealtimeStatus()
 ```
 
 `updateNft` altera a edição indicada (a padrão, se omitida) e passa pelo barramento (`nft.updated`, versão +1). `advanceOrder` liquida um pedido pendente imediatamente, com o resultado planejado ou com o status informado, aplicando os mesmos efeitos da liquidação por tempo e emitindo `order.updated`.
@@ -430,3 +517,15 @@ E-mail e telefone de contato do rodapé são fictícios e aparecem como texto, s
 - A API simulada roda no navegador: o estado é por origem e por perfil do navegador, e duas abas compartilham o mesmo `localStorage` sem sincronização entre elas.
 - Web Crypto (hash de senha e tokens) exige contexto seguro: `localhost` ou HTTPS.
 - A galeria do detalhe repete a imagem do NFT quatro vezes, como no Figma, porque há apenas uma imagem por obra.
+- Cada aba tem o seu próprio servidor simulado (MSW roda na página). Eventos de uma aba nunca chegam a outra, e o isolamento por usuário entre abas é trivial; o filtro por usuário é exercitado por conexões diferentes no mesmo servidor.
+- Como o token fica em `localStorage`, abas da mesma origem compartilham a sessão: um login em uma aba troca o usuário das outras (propagado pelo evento `storage`).
+
+### Transporte Socket.IO nos mocks (`@mswjs/socket.io-binding` 0.2.0)
+
+- Apenas o transporte `websocket`; não há long-polling nem upgrade. O cliente precisa usar `transports: ['websocket']`.
+- O handshake é falso: o binding responde `0{sid:"test",upgrades:[],pingInterval:25000,pingTimeout:5000}` e `40{sid:"test"}` sem esperar o CONNECT do cliente. O `sid` é sempre `test`, então não há recuperação de estado de conexão do Socket.IO; a reconciliação é feita por REST. O CONNECT com `auth` chega depois da confirmação, e eventos privados só são entregues a partir dele.
+- O binding não envia pings; o servidor simulado faz isso. Em abas em segundo plano, o navegador pode atrasar timers e o cliente pode reconectar.
+- Só o namespace `/`; sem rooms, broadcast, acks nem payload binário. O filtro por usuário é manual, por conexão.
+- O MSW remove o prefixo `/socket.io/` do caminho antes de casar a URL; com o caminho padrão o handler teria de casar `/`, capturando também o websocket do HMR do Vite. Por isso o caminho é `/realtime/`.
+- O `engine.io-client` captura `globalThis.WebSocket` quando o módulo é avaliado. Por isso o `socket.io-client` é carregado por `import()` dinâmico depois de o worker do MSW iniciar (e fica num chunk separado, fora do bundle inicial).
+- O fechamento pelo servidor usa códigos 1012 (reinício) e 1013 (tente mais tarde), aceitos pelo interceptor de WebSocket do MSW.

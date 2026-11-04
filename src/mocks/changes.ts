@@ -19,34 +19,38 @@ export function subscribeChanges(listener: ChangeListener): () => void {
   }
 }
 
-export function publishNftUpdated(nft: Nft): void {
-  publish({
+export function buildNftUpdatedEvent(nft: Nft): NftUpdatedEvent {
+  return {
+    id: crypto.randomUUID(),
+    type: 'nft.updated',
+    resource: { type: 'nft', id: nft.id },
+    version: nft.version,
     userId: null,
-    event: {
-      id: crypto.randomUUID(),
-      type: 'nft.updated',
-      resource: { type: 'nft', id: nft.id },
-      version: nft.version,
-      occurredAt: new Date().toISOString(),
-      data: {
-        editions: structuredClone(nft.editions),
-        price: nft.price,
-        compareAtPrice: nft.compareAtPrice,
-      },
+    occurredAt: new Date().toISOString(),
+    data: {
+      editions: structuredClone(nft.editions),
+      price: nft.price,
+      compareAtPrice: nft.compareAtPrice,
     },
-  })
+  }
+}
+
+export function buildOrderUpdatedEvent(order: Order, userId: string): OrderUpdatedEvent {
+  return {
+    id: crypto.randomUUID(),
+    type: 'order.updated',
+    resource: { type: 'order', id: order.id },
+    version: order.version,
+    userId,
+    occurredAt: order.updatedAt,
+    data: structuredClone(order),
+  }
+}
+
+export function publishNftUpdated(nft: Nft): void {
+  publish({ event: buildNftUpdatedEvent(nft), userId: null })
 }
 
 export function publishOrderUpdated(order: Order, userId: string): void {
-  publish({
-    userId,
-    event: {
-      id: crypto.randomUUID(),
-      type: 'order.updated',
-      resource: { type: 'order', id: order.id },
-      version: order.version,
-      occurredAt: order.updatedAt,
-      data: structuredClone(order),
-    },
-  })
+  publish({ event: buildOrderUpdatedEvent(order, userId), userId })
 }
