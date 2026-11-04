@@ -1,14 +1,8 @@
-import type {
-  Nft,
-  NetworkId,
-  Order,
-  Quote,
-  Wallet,
-} from '@/api/contracts'
+import type { Network, NetworkId, Nft, Order, Quote, Wallet } from '@/api/contracts'
 import type { CouponFixture } from '../fixtures/coupons'
 
-export const DB_STORAGE_KEY = 'kurio.mocks.db.v1'
-export const DB_SCHEMA_VERSION = 1
+export const DB_STORAGE_KEY = 'kurio.mocks.db.v2'
+export const DB_SCHEMA_VERSION = 2
 
 export interface UserRecord {
   id: string
@@ -60,7 +54,6 @@ export type CouponRecord = CouponFixture
 
 export interface QuoteRecord {
   quote: Quote
-  userId: string | null
   fingerprint: string
 }
 
@@ -68,10 +61,12 @@ export interface OrderRecord {
   userId: string
   idempotencyKey: string
   requestFingerprint: string
+  plannedOutcome: 'confirmed' | 'declined'
+  settleAt: string
   order: Order
 }
 
-export interface WalletRecord extends Wallet {
+export interface WalletRecord extends Omit<Wallet, 'connection'> {
   userId: string
 }
 
@@ -89,6 +84,7 @@ export interface MockDatabase {
   users: UserRecord[]
   sessions: SessionRecord[]
   nfts: Nft[]
+  networks: Network[]
   favorites: FavoriteRecord[]
   carts: CartRecord[]
   coupons: CouponRecord[]

@@ -1,11 +1,12 @@
 import type { AuthResponse } from '@/api/contracts'
 import { commit, getDb, nextId, type UserRecord } from '../db'
 import { generateSalt, hashPassword, verifyPassword } from '../db/crypto'
-import { createSession, deleteSession } from '../db/sessions'
+import { createSession, deleteSession, findSession } from '../db/sessions'
 import { errorResponse, jsonResponse, noContentResponse } from '../responses'
 import { getSettings, isScenario } from '../scenarios'
 import { apiRoute, readJsonBody, stringField } from './route'
 import { authenticate, readBearerToken, toSession } from './session-guard'
+import { clearWalletConnections } from './wallets'
 import { collectErrors, normalizeEmail, validateEmail, validateNewPassword, validateUsername } from './validation'
 
 async function authResponse(user: UserRecord, status: number): Promise<Response> {
@@ -101,6 +102,10 @@ const session = apiRoute('auth.session', async ({ request }) => {
 const logout = apiRoute('auth.logout', async ({ request }) => {
   const token = readBearerToken(request)
   if (token) {
+    const lookup = await findSession(token)
+    if (lookup.status === 'valid') {
+      clearWalletConnections(lookup.user.id)
+    }
     await deleteSession(token)
   }
   return noContentResponse()

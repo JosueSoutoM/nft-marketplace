@@ -8,6 +8,7 @@ import type {
   NftReview,
 } from '@/api/contracts'
 import { multiplyEth, percentOfEth } from '@/lib/eth'
+import { deterministicHex } from '../hex'
 import { networkLabel } from './networks'
 
 type ArtworkId = 'emerald-ape' | 'sage-nomad' | 'ivory-baron' | 'golden-beat'
@@ -142,18 +143,6 @@ function slugify(text: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-|-$/g, '')
-}
-
-function deterministicHex(seed: string, length: number): string {
-  let state = 2166136261
-  let output = ''
-  while (output.length < length) {
-    for (const char of seed + output.length) {
-      state = Math.imul(state ^ char.charCodeAt(0), 16777619) >>> 0
-    }
-    output += state.toString(16).padStart(8, '0')
-  }
-  return output.slice(0, length)
 }
 
 function buildImage(artwork: ArtworkId, alt: string): NftImage {

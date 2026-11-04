@@ -1,4 +1,5 @@
 import { couponFixtures } from '../fixtures/coupons'
+import { networkFixtures } from '../fixtures/networks'
 import { buildNftFixtures } from '../fixtures/nfts'
 import { userFixtures } from '../fixtures/users'
 import { hashPassword } from './crypto'
@@ -43,6 +44,7 @@ export async function createSeed(): Promise<MockDatabase> {
     users,
     sessions: [],
     nfts: buildNftFixtures(),
+    networks: networkFixtures.map((network) => ({ ...network })),
     favorites,
     carts: [],
     coupons: couponFixtures.map((coupon) => ({ ...coupon })),

@@ -64,56 +64,70 @@ Os tipos ficam em `src/api/contracts/` e são importados tanto pelo cliente (`sr
 
 ### Formato de erro
 
-Todas as respostas de erro seguem `{ "error": { "code", "message", "fieldErrors"? } }`.
+Todas as respostas de erro seguem `{ "error": { "code", "message", "fieldErrors"?, "details"? } }`. `fieldErrors` associa mensagens a campos (em objetos aninhados, com caminho por ponto, como `collector.email`). `details` só aparece nos conflitos de disponibilidade e de cotação:
+
+- `details.availability`: lista de `AvailabilityIssue` (`nftId`, `editionId`, `cartItemId`, `requested`, `available`, `maxQuantity` e `reason`, que é `STOCK` quando o limite vem do estoque ou `ORDER_LIMIT` quando vem do limite por pedido);
+- `details.quoteChanges`: lista de `QuoteChange` (o que mudou desde a cotação);
+- `details.currentQuote`: a cotação recalculada, já gravada, para o cliente pedir nova confirmação.
 
 | Status | Códigos | Uso |
 | --- | --- | --- |
-| 400 | `BAD_REQUEST` | JSON inválido ou query string inválida (com `fieldErrors` por parâmetro) |
+| 400 | `BAD_REQUEST` | JSON inválido, query string inválida ou header obrigatório ausente (`X-Guest-Cart-Id`, `Idempotency-Key`) |
 | 401 | `UNAUTHENTICATED`, `SESSION_EXPIRED`, `INVALID_CREDENTIALS` | Sem token ou token desconhecido; sessão expirada; e-mail ou senha incorretos no login |
-| 403 | `FORBIDDEN` | Recurso de outro usuário |
-| 404 | `NOT_FOUND` | Recurso inexistente |
-| 409 | `EMAIL_TAKEN`, `USERNAME_TAKEN`, `AVAILABILITY_CONFLICT`, `QUOTE_OUTDATED`, `IDEMPOTENCY_KEY_REUSED`, `WALLET_CONNECTION_REJECTED` | Conflitos de estado |
+| 403 | `FORBIDDEN` | Sem permissão (cenário `forbidden`) |
+| 404 | `NOT_FOUND` | Recurso inexistente ou de outro usuário |
+| 409 | `EMAIL_TAKEN`, `USERNAME_TAKEN`, `AVAILABILITY_CONFLICT`, `QUOTE_OUTDATED`, `IDEMPOTENCY_KEY_REUSED`, `WALLET_CONNECTION_REJECTED`, `WALLET_NOT_CONNECTED` | Conflitos de estado |
 | 413 | `PAYLOAD_TOO_LARGE` | Avatar acima do limite |
-| 422 | `VALIDATION_ERROR`, `COUPON_INVALID`, `COUPON_EXPIRED` | Validação de corpo, sempre com `fieldErrors` quando há campo associado |
+| 422 | `VALIDATION_ERROR`, `COUPON_INVALID`, `COUPON_EXPIRED`, `CART_EMPTY` | Validação de corpo, sempre com `fieldErrors` quando há campo associado |
 | 500 | `INTERNAL_ERROR` | Erro inesperado |
 | 503 | `SERVICE_UNAVAILABLE` | Falha transitória |
 
-No cliente, um interceptor do Axios converte qualquer falha em `ApiError` (`status`, `code`, `message`, `fieldErrors`). Falhas sem resposta HTTP recebem `status: 0` e um código de cliente: `NETWORK_ERROR`, `TIMEOUT`, `CANCELED` ou `UNKNOWN_ERROR`. `ApiError.isTransient` indica rede, timeout ou 5xx. Todas as funções REST aceitam `AbortSignal`.
+No cliente, um interceptor do Axios converte qualquer falha em `ApiError` (`status`, `code`, `message`, `fieldErrors`, `details`). Falhas sem resposta HTTP recebem `status: 0` e um código de cliente: `NETWORK_ERROR`, `TIMEOUT`, `CANCELED` ou `UNKNOWN_ERROR`. `ApiError.isTransient` indica rede, timeout ou 5xx. Todas as funções REST aceitam `AbortSignal`.
+
+### Cliente REST (`src/api/`)
+
+Uma função tipada por endpoint, agrupadas por recurso: `auth.ts`, `nfts.ts`, `networks.ts`, `favorites.ts`, `cart.ts`, `quotes.ts`, `orders.ts`, `profile.ts` e `wallets.ts`. Os headers de protocolo são montados apenas nessa camada:
+
+- `Authorization`: interceptor do Axios, a partir de `session-token.ts`.
+- `X-Guest-Cart-Id`: `guest-cart.ts` gera um UUID e o guarda em `localStorage` (`kurio.guest-cart-id`). As funções de carrinho e cotação enviam esse header apenas quando não há sessão. `mergeGuestCart()` envia o identificador no corpo e o apaga após o merge.
+- `Idempotency-Key`: `createOrder(body, { idempotencyKey })` exige a chave, e `createIdempotencyKey()` a gera. A chave pertence à tentativa de compra: reenvios da mesma tentativa reutilizam a chave; uma nova confirmação, depois de uma cotação nova, usa outra.
 
 ### Endpoints
 
-| Status | Método e caminho | Requer sessão | Corpo / query | Resposta |
-| --- | --- | --- | --- | --- |
-| Implementado | `POST /api/auth/register` | Não | `RegisterRequest` | `201 AuthResponse`; 409 `EMAIL_TAKEN`/`USERNAME_TAKEN`; 422 |
-| Implementado | `POST /api/auth/login` | Não | `LoginRequest` | `200 AuthResponse`; 401 `INVALID_CREDENTIALS`; 422 |
-| Implementado | `GET /api/auth/session` | Sim | — | `200 Session`; 401 `UNAUTHENTICATED`/`SESSION_EXPIRED` |
-| Implementado | `POST /api/auth/logout` | Não | — | `204` (idempotente; invalida o token enviado) |
-| Implementado | `GET /api/nfts` | Não | `NftListQuery` | `200 NftListResponse`; 400 |
-| Implementado | `GET /api/nfts/:nftId` | Não | — | `200 Nft`; 404 |
-| Planejado | `GET /api/networks` | Não | — | `200 NetworkListResponse` |
-| Planejado | `GET /api/favorites` | Sim | — | `200 FavoriteListResponse` |
-| Planejado | `PUT /api/favorites/:nftId` | Sim | — | `200 Favorite` (idempotente); 404 |
-| Planejado | `DELETE /api/favorites/:nftId` | Sim | — | `204` (idempotente) |
-| Planejado | `GET /api/cart` | Não | header de visitante ou sessão | `200 Cart` |
-| Planejado | `POST /api/cart/items` | Não | `AddCartItemRequest` | `200 Cart`; 404; 409 `AVAILABILITY_CONFLICT`; 422 |
-| Planejado | `PATCH /api/cart/items/:itemId` | Não | `UpdateCartItemRequest` | `200 Cart`; 409; 422 |
-| Planejado | `DELETE /api/cart/items/:itemId` | Não | — | `200 Cart` |
-| Planejado | `PUT /api/cart/coupon` | Não | `ApplyCouponRequest` | `200 Cart`; 422 `COUPON_INVALID`/`COUPON_EXPIRED` |
-| Planejado | `DELETE /api/cart/coupon` | Não | — | `200 Cart` |
-| Planejado | `POST /api/cart/merge` | Sim | `MergeCartRequest` | `200 Cart` |
-| Planejado | `POST /api/quotes` | Não | `CreateQuoteRequest` | `201 Quote` |
-| Planejado | `POST /api/orders` | Sim | `CreateOrderRequest` + `Idempotency-Key` | `201 Order` (`pending`); `200` com o mesmo pedido ao repetir a chave; 409 `QUOTE_OUTDATED`/`AVAILABILITY_CONFLICT`/`IDEMPOTENCY_KEY_REUSED` |
-| Planejado | `GET /api/orders` | Sim | `?status=` | `200 OrderListResponse` |
-| Planejado | `GET /api/orders/:orderId` | Sim | — | `200 Order`; 403; 404 |
-| Planejado | `GET /api/profile` | Sim | — | `200 Profile` |
-| Planejado | `PATCH /api/profile` | Sim | `UpdateProfileRequest` | `200 Profile`; 409 `EMAIL_TAKEN`/`USERNAME_TAKEN`; 422 |
-| Planejado | `PUT /api/profile/avatar` | Sim | `multipart/form-data` (campo `avatar`, PNG/JPEG/WebP, até 512 KB) | `200 Profile`; 413; 422 |
-| Planejado | `DELETE /api/profile/avatar` | Sim | — | `200 Profile` |
-| Planejado | `POST /api/profile/password` | Sim | `ChangePasswordRequest` | `204`; 422 (senha atual incorreta em `fieldErrors.currentPassword`) |
-| Planejado | `GET /api/wallets` | Sim | — | `200 WalletListResponse` |
-| Planejado | `PUT /api/wallets/:slot` | Sim | `UpsertWalletRequest` (`slot` = `primary` ou `secondary`) | `200 Wallet`; 422 |
-| Planejado | `POST /api/wallets/:walletId/connect` | Sim | `ConnectWalletRequest` | `200 WalletConnection`; 409 `WALLET_CONNECTION_REJECTED` |
-| Planejado | `POST /api/wallets/:walletId/disconnect` | Sim | — | `200 WalletConnection` |
+Todos os endpoints estão implementados. A coluna "Sessão" indica se o endpoint exige token; "Visitante ou sessão" aceita o token ou, sem ele, o header `X-Guest-Cart-Id`.
+
+| Método e caminho | Sessão | Corpo / query | Resposta |
+| --- | --- | --- | --- |
+| `POST /api/auth/register` | Não | `RegisterRequest` | `201 AuthResponse`; 409 `EMAIL_TAKEN`/`USERNAME_TAKEN`; 422 |
+| `POST /api/auth/login` | Não | `LoginRequest` | `200 AuthResponse`; 401 `INVALID_CREDENTIALS`; 422 |
+| `GET /api/auth/session` | Sim | — | `200 Session`; 401 `UNAUTHENTICATED`/`SESSION_EXPIRED` |
+| `POST /api/auth/logout` | Não | — | `204` (idempotente; invalida o token enviado e desconecta as carteiras do usuário) |
+| `GET /api/nfts` | Não | `NftListQuery` | `200 NftListResponse`; 400 |
+| `GET /api/nfts/:nftId` | Não | — | `200 Nft`; 404 |
+| `GET /api/networks` | Não | — | `200 NetworkListResponse` (rede, taxa estimada, base do explorador) |
+| `GET /api/favorites` | Sim | — | `200 FavoriteListResponse` (mais recentes primeiro) |
+| `PUT /api/favorites/:nftId` | Sim | — | `200 Favorite` (idempotente); 404 |
+| `DELETE /api/favorites/:nftId` | Sim | — | `204` (idempotente) |
+| `GET /api/cart` | Visitante ou sessão | `X-Guest-Cart-Id` sem sessão | `200 Cart` (criado vazio se não existir); 400 sem dono |
+| `POST /api/cart/items` | Visitante ou sessão | `AddCartItemRequest` | `200 Cart`; 404 NFT/edição; 409 `AVAILABILITY_CONFLICT`; 422 quantidade |
+| `PATCH /api/cart/items/:itemId` | Visitante ou sessão | `UpdateCartItemRequest` | `200 Cart`; 404; 409 `AVAILABILITY_CONFLICT`; 422 |
+| `DELETE /api/cart/items/:itemId` | Visitante ou sessão | — | `200 Cart` (idempotente) |
+| `PUT /api/cart/coupon` | Visitante ou sessão | `ApplyCouponRequest` | `200 Cart`; 422 `VALIDATION_ERROR`/`COUPON_INVALID`/`COUPON_EXPIRED` |
+| `DELETE /api/cart/coupon` | Visitante ou sessão | — | `200 Cart` |
+| `POST /api/cart/merge` | Sim | `MergeCartRequest` | `200 MergeCartResponse` (`cart` e `adjustments`); 422 |
+| `POST /api/quotes` | Visitante ou sessão | `CreateQuoteRequest` | `201 Quote`; 422 `CART_EMPTY`/`VALIDATION_ERROR` |
+| `POST /api/orders` | Sim | `CreateOrderRequest` + `Idempotency-Key` | `201 Order` (`pending`); `200` com o mesmo pedido e header `Idempotent-Replayed: true` ao repetir a chave; 400; 404 cotação; 409 `QUOTE_OUTDATED`/`AVAILABILITY_CONFLICT`/`IDEMPOTENCY_KEY_REUSED`/`WALLET_NOT_CONNECTED`; 422 |
+| `GET /api/orders` | Sim | `?status=pending\|confirmed\|declined` | `200 OrderListResponse` (mais recentes primeiro) |
+| `GET /api/orders/:orderId` | Sim | — | `200 Order`; 404 (inexistente ou de outro usuário) |
+| `GET /api/profile` | Sim | — | `200 Profile` |
+| `PATCH /api/profile` | Sim | `UpdateProfileRequest` | `200 Profile`; 409 `EMAIL_TAKEN`/`USERNAME_TAKEN`; 422 |
+| `PUT /api/profile/avatar` | Sim | `multipart/form-data` (campo `avatar`, PNG/JPEG/WebP, até 512 KB) | `200 Profile`; 400; 413; 422 |
+| `DELETE /api/profile/avatar` | Sim | — | `200 Profile` |
+| `POST /api/profile/password` | Sim | `ChangePasswordRequest` | `204`; 422 |
+| `GET /api/wallets` | Sim | — | `200 WalletListResponse` (principal primeiro, com `connection`) |
+| `PUT /api/wallets/:slot` | Sim | `UpsertWalletRequest` (`slot` = `primary` ou `secondary`) | `201 Wallet` ao criar, `200` ao atualizar; 404 slot; 422 |
+| `POST /api/wallets/:walletId/connect` | Sim | `ConnectWalletRequest` | `200 WalletConnection`; 404; 409 `WALLET_CONNECTION_REJECTED`; 422 |
+| `POST /api/wallets/:walletId/disconnect` | Sim | — | `200 WalletConnection`; 404 |
 
 ### Catálogo (`GET /api/nfts`)
 
@@ -133,9 +147,75 @@ A resposta traz `items`, `total`, `page`, `pageSize`, `totalPages` e `facets`. N
 
 Cada NFT tem edições (`1/1`, `1/10`, `1/50`, `Aberta`) com estoque inteiro (`available`), limite por pedido (`maxPerOrder`), preço e preço anterior opcional. `price` e `compareAtPrice` do NFT repetem os da edição padrão (`defaultEditionId`, sempre `1/50`) e são a base de filtro e ordenação. `version` é um inteiro que cresce a cada alteração de preço ou estoque e acompanha os eventos `nft.updated`.
 
-### Cotação e pedido (planejado)
+### Carrinho (API)
 
-A cotação (`Quote`) é calculada a partir do carrinho atual e da rede escolhida: linhas com preço e disponibilidade atuais (e `issue` quando algo mudou), cupom, subtotal, desconto, taxa de rede, total, `expiresAt`, `id` e `version`. A `version` cresce sempre que o conteúdo da cotação muda para o mesmo carrinho. O pedido referencia `quoteId` e `quoteVersion`; se a cotação expirou ou não corresponde mais ao estado atual, o servidor responde `409 QUOTE_OUTDATED`. O recibo (`OrderReceipt`) é um snapshot gravado na criação do pedido e nunca é recalculado.
+- Dono: com token, o carrinho do usuário; sem token, o carrinho identificado por `X-Guest-Cart-Id`. Token inválido ou expirado responde 401 e nunca cai para o carrinho de visitante.
+- O carrinho guarda apenas `nftId`, `editionId` e quantidade. Preço, disponibilidade, `maxQuantity` e `nftVersion` são lidos do catálogo a cada resposta, então refletem qualquer mudança.
+- Quantidades são inteiros de 1 a 1000 (422 caso contrário). Incluir um item que já existe soma as quantidades.
+- Disponibilidade: o limite é `maxQuantity = min(available, maxPerOrder)` da edição. Exceder responde `409 AVAILABILITY_CONFLICT` com `details.availability[0].maxQuantity` e `reason` (`STOCK` ou `ORDER_LIMIT`); edição esgotada tem `maxQuantity` 0.
+- Cupom: código normalizado para maiúsculas. Fora do formato `[A-Z0-9]{4,20}` responde 422 `VALIDATION_ERROR`; inexistente, 422 `COUPON_INVALID` ("O cupom X não existe…"); vencido, 422 `COUPON_EXPIRED` ("O cupom X expirou em dd/mm/aaaa."). Nos três casos a mensagem também vem em `fieldErrors.code`.
+- Merge (`POST /api/cart/merge`, após o login): soma as quantidades do visitante às do usuário, limitando cada linha a `maxQuantity`. Cada limitação aplicada aparece em `adjustments`. O cupom do visitante é mantido se o usuário não tiver um. O carrinho de visitante é apagado.
+
+### Cotação
+
+`POST /api/quotes { network }` valida o carrinho atual e devolve a cotação, que é a referência para o pedido:
+
+- Linhas com preço e disponibilidade atuais e `issue`: `SOLD_OUT`, `INSUFFICIENT_AVAILABILITY` (quantidade acima de `maxQuantity`) ou `PRICE_CHANGED` (preço diferente da cotação anterior do mesmo carrinho, com `previousUnitPrice`).
+- Cupom do carrinho revalidado: válido em `coupon`, inválido ou vencido em `couponError` (sem desconto).
+- `subtotal` = soma de `unitPrice × quantity`; `discount` = percentual do cupom sobre o subtotal (half-up no wei, nunca maior que o subtotal); `networkFee` = taxa da rede escolhida; `total` = subtotal − desconto + taxa. Tudo calculado com `src/lib/eth.ts`.
+- `purchasable` é falso se alguma linha estiver esgotada ou acima do disponível.
+- `id` é novo a cada chamada. `version` é um contador por carrinho que só cresce quando o conteúdo muda (itens, quantidades, preços, disponibilidade suficiente ou não, cupom, rede ou taxa). `expiresAt` = criação + 10 minutos.
+
+### Pedidos
+
+**Idempotência.** `POST /api/orders` exige `Idempotency-Key` (8 a 128 caracteres `[A-Za-z0-9_-]`; 400 se ausente). A chave vale por usuário. O servidor guarda uma impressão canônica do corpo validado (chaves ordenadas):
+
+- mesma chave e mesmo conteúdo: devolve o pedido já criado (`200`, `Idempotent-Replayed: true`), no estado atual, sem revalidar nem criar outro;
+- mesma chave e conteúdo diferente: `409 IDEMPOTENCY_KEY_REUSED`;
+- tentativa rejeitada (409 de cotação, 422) não registra a chave.
+
+A verificação da chave e a criação do pedido acontecem no mesmo trecho síncrono do handler, então cliques repetidos simultâneos também resultam em um único pedido.
+
+**Revalidação.** Antes de criar o pedido, o servidor:
+
+1. exige carrinho não vazio (`422 CART_EMPTY`) e cotação existente (`404`);
+2. resolve a carteira: salva precisa pertencer ao usuário e estar conectada na rede do pedido (`409 WALLET_NOT_CONNECTED`); "outra carteira" exige tipo e endereço válidos para a rede;
+3. se a cotação é de outro carrinho (por exemplo, cotada como visitante antes do merge), responde `409 QUOTE_OUTDATED` com `ITEMS_CHANGED`;
+4. recalcula a cotação com o estado atual e compara com a cotação enviada: `QUOTE_EXPIRED`, `QUOTE_VERSION_MISMATCH`, `NETWORK_CHANGED`, `ITEMS_CHANGED`, `PRICE_CHANGED`, `AVAILABILITY_CHANGED`, `COUPON_CHANGED` e `NETWORK_FEE_CHANGED`;
+5. se algum item ficou indisponível, responde `409 AVAILABILITY_CONFLICT`; se houve qualquer outra mudança, `409 QUOTE_OUTDATED`. Nos dois casos `details` traz as mudanças e a nova cotação (`currentQuote`), que o usuário precisa confirmar com uma nova tentativa.
+
+**Máquina de estados.**
+
+```
+pending ──(liquidação)──▶ confirmed   (terminal)
+   └─────(liquidação)──▶ declined    (terminal)
+```
+
+- O pedido nasce `pending` (`version` 1) com o resultado planejado: `declined` no cenário `payment-declined`, `confirmed` nos demais. A liquidação ocorre 3 s depois (`settleAt`, gravado no banco), por timer. Se a página recarregar, os pedidos pendentes são reagendados ao iniciar os mocks; leituras (`GET /api/orders`, `GET /api/orders/:id` e o replay idempotente) também liquidam pedidos vencidos.
+- Confirmação: confere o estoque de cada edição. Se faltar, o pedido vira `declined` com `AVAILABILITY_LOST` e nada muda. Caso contrário, baixa o estoque (emitindo `nft.updated`), remove do carrinho do usuário apenas os itens e quantidades comprados e grava `transaction` (hash de 64 hex derivado do pedido e link simulado do explorador da rede).
+- Recusa: `decline.code = PAYMENT_DECLINED`; estoque, itens e cupom do carrinho ficam intactos.
+- Não há reserva de estoque entre a criação e a confirmação: o estoque só é baixado na confirmação, e um pedido cujo estoque acabou nesse intervalo é recusado com `AVAILABILITY_LOST`.
+- Cada transição incrementa `version` e emite `order.updated`. Estados terminais nunca mudam; `advanceOrder` em um pedido terminal devolve o pedido inalterado.
+
+**Remoção parcial do carrinho.** Na confirmação, para cada linha do recibo, a quantidade comprada é subtraída do item correspondente (mesmo NFT e edição) no carrinho atual do usuário, e itens que chegam a zero são removidos. Itens ou quantidades adicionados depois da criação do pedido permanecem. O cupom usado no pedido é consumido: se o carrinho ainda tiver esse mesmo cupom, ele é removido. Na recusa (incluindo `AVAILABILITY_LOST`) ou em qualquer falha antes da criação, itens e cupom permanecem.
+
+**Recibo.** `receipt` é um snapshot gravado na criação (clonado, sem referências ao catálogo): linhas com nome, token, imagem, edição, quantidade, preço unitário e total da linha, cupom, subtotal, desconto, taxa, total, rede, carteira (tipo, endereço e rótulo, por exemplo "MetaMask"), dados do colecionador e observação. Mudanças posteriores no catálogo não o alteram. `transaction` é preenchido apenas na confirmação.
+
+### Perfil e carteiras
+
+- Perfil: nome de exibição (2 a 50), nome de usuário (padrão do cadastro, único), e-mail (único), nome ENS (`nome.eth`) e apelido da carteira (2 a 40), todos obrigatórios como no Figma. O contrato tipa `ensName` e `walletNickname` como `string | null` porque contas recém-cadastradas ainda não os têm, mas o servidor recusa `null` ou vazio na atualização (422).
+- Avatar: PNG, JPEG ou WebP até 512 KB. O tipo declarado precisa coincidir com a assinatura dos bytes do arquivo. Fica guardado como data URL no banco.
+- Senha: exige a senha atual (422 em `currentPassword` se estiver errada), aplica a política do cadastro, recusa senha igual à atual, guarda novo salt e hash e encerra as outras sessões do usuário, mantendo a atual.
+- Carteiras: principal e secundária por usuário. Endereço validado pela rede: Ethereum e Polygon `0x` + 40 hex; Solana base58 com 32 a 44 caracteres. "ENS ou carteira secundária" aceita `nome.eth` ou endereço da mesma rede. A secundária exige a principal; com `{ sameAsPrimary: true }` ela copia a principal e acompanha suas alterações. Trocar endereço ou rede desfaz a conexão.
+- Conexão simulada: `connect` registra a carteira como conectada em uma rede, `disconnect` a desconecta e o logout desconecta todas as carteiras do usuário. O estado aparece em `Wallet.connection`.
+
+### Isolamento por usuário
+
+- Todo endpoint privado obtém o usuário a partir do token e filtra os dados por ele. Nenhum endpoint aceita `userId` do cliente.
+- Recursos de outro usuário respondem `404`, sem revelar a existência: pedidos, carteiras (inclusive `connect`/`disconnect`) e itens de carrinho, porque cada busca já é feita dentro do usuário.
+- A chave de idempotência vale por usuário.
+- Sem token, endpoints privados respondem `401 UNAUTHENTICATED`. Com sessão expirada (por TTL, pelo botão "Expirar sessões" ou pelo cenário `session-expired`), respondem `401 SESSION_EXPIRED`, inclusive no carrinho.
+- Cada mudança do barramento de pedidos carrega o `userId` dono, para que o transporte em tempo real entregue o evento apenas a esse usuário.
 
 ### Aritmética de ETH
 
@@ -174,9 +254,12 @@ src/mocks/
   endpoints.ts        identificador, método, caminho e exigência de sessão de cada endpoint
   scenarios.ts        cenários, latência, TTL de sessão e persistência dessas configurações
   control.ts          objeto global window.__mocks
+  changes.ts          barramento interno de mudanças (nft.updated e order.updated)
   responses.ts        respostas JSON, erro padronizado e falha de rede
+  hex.ts              hex determinístico (contratos e hashes de transação)
   db/                 estado, persistência, seed, sessões e criptografia
-  fixtures/           NFTs, usuários, cupons, redes e categorias
+  fixtures/           NFTs, usuários, cupons, redes, categorias e rótulos de carteira
+  services/           regras compartilhadas: catálogo, carrinho, cupom, cotação e pedidos
   handlers/           handlers REST por recurso, guarda de sessão e validação
   panel/              painel flutuante de cenários
 ```
@@ -185,14 +268,14 @@ Cada handler é registrado por `apiRoute(endpoint, resolver)`, que aplica a lat�
 
 ### Banco simulado
 
-- Um único objeto (`MockDatabase`) com usuários, sessões, NFTs, favoritos, carrinhos, cupons, cotações, pedidos, carteiras e conexões de carteira, salvo em `localStorage` na chave `kurio.mocks.db.v1` a cada alteração. A versão do esquema faz parte da chave; um esquema diferente é descartado e substituído pelo seed.
+- Um único objeto (`MockDatabase`) com usuários, sessões, NFTs, redes, favoritos, carrinhos, cupons, cotações, pedidos, carteiras e conexões de carteira, salvo em `localStorage` na chave `kurio.mocks.db.v2` a cada alteração. A versão do esquema faz parte da chave; um esquema diferente é descartado e substituído pelo seed.
 - Senhas são guardadas apenas como hash PBKDF2-SHA-256 (100 000 iterações) com salt por usuário, via Web Crypto. Tokens de sessão são aleatórios (32 bytes) e o banco guarda apenas o SHA-256 do token.
 - Sessões têm expiração fixa (TTL padrão de 2 horas, configurável por `window.__mocks.setSessionTtl(segundos)`). Sessões expiradas continuam registradas por 24 horas para responder `SESSION_EXPIRED` em vez de `UNAUTHENTICATED`.
-- Identificadores criados pela simulação usam contadores (`user-0001`, …), o que mantém os testes determinísticos.
+- Identificadores criados pela simulação usam contadores (`user-0001`, `cart-0001`, `item-0001`, `quote-0001`, `order-0001`, `wallet-0001`), o que mantém os testes determinísticos. Cada carrinho guarda as 5 cotações mais recentes.
 
 ### Reset
 
-O reset recria o seed (catálogo, usuários, carteiras, favoritos e cupons), apaga sessões, carrinhos, cotações e pedidos e volta ao cenário `success` com latência fixa. Ele está disponível no painel ("Restaurar dados", que também recarrega a página) e em `await window.__mocks.reset()`.
+O reset cancela os timers de liquidação, recria o seed (catálogo, redes, usuários, carteiras, favoritos e cupons), apaga sessões, carrinhos, cotações, pedidos e conexões de carteira e volta ao cenário `success` com latência fixa. Ele está disponível no painel ("Restaurar dados", que também recarrega a página) e em `await window.__mocks.reset()`.
 
 ### Fixtures
 
@@ -201,6 +284,32 @@ O reset recria o seed (catálogo, usuários, carteiras, favoritos e cupons), apa
 - Limites por pedido: `1/1` = 1, `1/10` = 3, `1/50` = 10, `Aberta` = 20.
 - Cupons: `KURIO10` (10%, válido), `GENESIS25` (25%, expirado em 31/01/2025). Qualquer outro código é inválido; códigos fora do formato `[A-Z0-9]{4,20}` são erro de validação.
 - Taxa de rede estimada: Ethereum 0.016 ETH, Polygon 0.002 ETH, Solana 0.0008 ETH.
+
+### Barramento de mudanças
+
+`src/mocks/changes.ts` é um emissor interno da camada de mocks. Nenhum código fora de `src/mocks/` o importa. Toda alteração de preço ou disponibilidade de um NFT (`services/catalog.ts#updateNftEditions`) e toda mudança de estado de um pedido (criação e liquidação em `services/orders.ts`) publica uma mudança:
+
+```ts
+type MockChange =
+  | { event: NftUpdatedEvent; userId: null }
+  | { event: OrderUpdatedEvent; userId: string }
+
+interface RealtimeEvent {
+  id: string
+  type: 'nft.updated' | 'order.updated'
+  resource: { type: 'nft' | 'order'; id: string }
+  version: number
+  occurredAt: string
+  data: ...
+}
+```
+
+- `id`: UUID único do evento.
+- `version`: versão do recurso depois da mudança (`Nft.version` ou `Order.version`), sempre crescente.
+- `data`: em `nft.updated`, `editions`, `price` e `compareAtPrice`; em `order.updated`, o `Order` completo.
+- `userId`: dono do pedido, ou `null` para NFTs (evento público).
+
+Os tipos dos eventos vêm de `src/api/contracts/events.ts`. Assinatura: `subscribeChanges(listener)`, que devolve a função de cancelamento. A ligação com o Socket.IO fica para a próxima tarefa.
 
 ### Credenciais fictícias
 
@@ -233,18 +342,18 @@ O reset recria o seed (catálogo, usuários, carteiras, favoritos e cupons), apa
 | `unauthorized` | Endpoints privados respondem 401 `UNAUTHENTICATED`. |
 | `forbidden` | Endpoints privados respondem 403 `FORBIDDEN`. |
 | `register-conflict` | O cadastro responde 409 `EMAIL_TAKEN` para qualquer e-mail. |
-| `form-validation` | Formulários válidos no cliente recebem 422 com `fieldErrors` do servidor. Implementado no cadastro; perfil, senha e carteiras na parte 2. |
-| `coupon-invalid` | Qualquer cupom responde 422 `COUPON_INVALID`. (parte 2) |
-| `coupon-expired` | Qualquer cupom responde 422 `COUPON_EXPIRED`. (parte 2) |
-| `price-changed` | Na criação do pedido, o preço do primeiro item sobe, `nft.updated` é emitido e o pedido responde 409 `QUOTE_OUTDATED`. (parte 2) |
-| `edition-sold-out` | Na criação do pedido, a edição do primeiro item esgota, `nft.updated` é emitido e o pedido responde 409 `AVAILABILITY_CONFLICT`. (parte 2) |
-| `order-timeout` | O pedido é criado, mas a primeira resposta só chega após o timeout do cliente; o reenvio com a mesma chave recupera o mesmo pedido. (parte 2) |
-| `payment-confirmed` | O pedido fica pendente e é confirmado via `order.updated`. (parte 2) |
-| `payment-declined` | O pedido fica pendente e é recusado via `order.updated`. (parte 2) |
+| `form-validation` | Formulários válidos no cliente recebem 422 com `fieldErrors` do servidor: cadastro e perfil (`username`), senha (`newPassword`) e carteiras (`address`). |
+| `coupon-invalid` | Qualquer cupom responde 422 `COUPON_INVALID`; a cotação de um carrinho com cupom traz `couponError` do mesmo tipo. |
+| `coupon-expired` | Qualquer cupom responde 422 `COUPON_EXPIRED`; idem na cotação. |
+| `price-changed` | Na primeira tentativa de pedido após ativar o cenário, o preço da edição do primeiro item sobe 10% (com `nft.updated`) e o pedido responde 409 `QUOTE_OUTDATED` com a nova cotação. A tentativa seguinte, com a nova cotação, é aceita. |
+| `edition-sold-out` | Na primeira tentativa de pedido após ativar, a edição do primeiro item esgota (com `nft.updated`) e o pedido responde 409 `AVAILABILITY_CONFLICT`. Depois de remover o item, o pedido é aceito. |
+| `order-timeout` | O pedido é criado e liquidado normalmente, mas a resposta de criação leva 20 s, mais que o timeout do Axios (10 s). O reenvio com a mesma chave responde na hora com o mesmo pedido. |
+| `payment-confirmed` | O pedido fica `pending` por 3 s e é confirmado, como no `success`. |
+| `payment-declined` | O pedido fica `pending` por 3 s e é recusado; carrinho e estoque ficam intactos. |
 | `favorite-failure` | Incluir ou remover favoritos responde 503 (rollback otimista). |
 | `wallet-rejected` | Conectar carteira responde 409 `WALLET_CONNECTION_REJECTED`. |
 
-Os cenários de falha genérica (`network-error`, `server-error`, `service-unavailable`, `transient-failure`, `unauthorized`, `forbidden`, `favorite-failure`, `wallet-rejected`) já valem para todos os endpoints, inclusive os da parte 2. Os marcados "(parte 2)" dependem de handlers ainda não implementados.
+Os cenários de falha genérica (`network-error`, `server-error`, `service-unavailable`, `transient-failure`, `unauthorized`, `forbidden`, `favorite-failure`, `wallet-rejected`) são aplicados por `apiRoute` antes do handler. Os demais são lidos pelos handlers e serviços. Os efeitos de `price-changed` e `edition-sold-out` acontecem uma vez por ativação; selecionar o cenário de novo (ou mudar a latência) os rearma.
 
 ### Como selecionar
 
@@ -260,7 +369,13 @@ window.__mocks.setLatency('none')
 window.__mocks.setSessionTtl(5)
 window.__mocks.expireSessions()
 window.__mocks.getSettings()
+window.__mocks.updateNft('emerald-ape-042', { price: '1.29' })
+window.__mocks.updateNft('neon-vessel-552', { editionId: 'limited-10', available: 0 })
+window.__mocks.advanceOrder('order-0001')
+window.__mocks.advanceOrder('order-0001', 'declined')
 ```
+
+`updateNft` altera a edição indicada (a padrão, se omitida) e passa pelo barramento (`nft.updated`, versão +1). `advanceOrder` liquida um pedido pendente imediatamente, com o resultado planejado ou com o status informado, aplicando os mesmos efeitos da liquidação por tempo e emitindo `order.updated`.
 
 ## Acessibilidade
 

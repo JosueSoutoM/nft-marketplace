@@ -1,5 +1,5 @@
 import axios from 'axios'
-import { API_ERROR_CODES, type ApiErrorBody, type ApiErrorCode, type FieldErrors } from './contracts'
+import { API_ERROR_CODES, type ApiErrorBody, type ApiErrorCode, type ApiErrorDetails, type FieldErrors } from './contracts'
 
 export type ClientErrorCode = 'NETWORK_ERROR' | 'TIMEOUT' | 'CANCELED' | 'UNKNOWN_ERROR'
 
@@ -8,19 +8,22 @@ export interface ApiErrorInit {
   code: ApiErrorCode | ClientErrorCode
   message: string
   fieldErrors?: FieldErrors
+  details?: ApiErrorDetails
 }
 
 export class ApiError extends Error {
   readonly status: number
   readonly code: ApiErrorCode | ClientErrorCode
   readonly fieldErrors: FieldErrors
+  readonly details: ApiErrorDetails
 
-  constructor({ status, code, message, fieldErrors }: ApiErrorInit) {
+  constructor({ status, code, message, fieldErrors, details }: ApiErrorInit) {
     super(message)
     this.name = 'ApiError'
     this.status = status
     this.code = code
     this.fieldErrors = fieldErrors ?? {}
+    this.details = details ?? {}
   }
 
   get isTransient(): boolean {

@@ -2,6 +2,7 @@ import type { EthAmount, IsoDateTime } from './common'
 import type { NftEditionKind, NftImage } from './nfts'
 
 export const GUEST_CART_HEADER = 'X-Guest-Cart-Id'
+export const GUEST_CART_ID_PATTERN = /^[A-Za-z0-9-]{8,64}$/
 
 export interface CartItem {
   id: string
@@ -30,6 +31,16 @@ export interface Cart {
   updatedAt: IsoDateTime
 }
 
+export interface AvailabilityIssue {
+  nftId: string
+  editionId: string
+  cartItemId: string | null
+  requested: number
+  available: number
+  maxQuantity: number
+  reason: 'STOCK' | 'ORDER_LIMIT'
+}
+
 export interface AddCartItemRequest {
   nftId: string
   editionId: string
@@ -46,4 +57,9 @@ export interface ApplyCouponRequest {
 
 export interface MergeCartRequest {
   guestCartId: string
+}
+
+export interface MergeCartResponse {
+  cart: Cart
+  adjustments: AvailabilityIssue[]
 }

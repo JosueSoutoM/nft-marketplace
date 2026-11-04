@@ -57,6 +57,7 @@ export const SLOW_LATENCY_MS = 2500
 export const VARIABLE_LATENCY_MIN_MS = 150
 export const VARIABLE_LATENCY_MAX_MS = 2000
 export const ORDER_TIMEOUT_DELAY_MS = 20_000
+export const PAYMENT_SETTLE_DELAY_MS = 3000
 export const DEFAULT_SESSION_TTL_SECONDS = 2 * 60 * 60
 
 const SETTINGS_STORAGE_KEY = 'kurio.mocks.settings.v1'
@@ -150,11 +151,11 @@ export const SCENARIOS: Record<ScenarioName, ScenarioDefinition> = {
   },
   'price-changed': {
     label: 'Preço alterado na compra',
-    description: 'Ao confirmar o pedido, o preço do primeiro item sobe, um nft.updated é emitido e o pedido responde 409 QUOTE_OUTDATED.',
+    description: 'Na primeira tentativa de pedido após ativar, o preço do primeiro item sobe 10% (emitindo nft.updated) e o pedido responde 409 QUOTE_OUTDATED.',
   },
   'edition-sold-out': {
     label: 'Edição esgotada na compra',
-    description: 'Ao confirmar o pedido, a edição do primeiro item esgota, um nft.updated é emitido e o pedido responde 409 AVAILABILITY_CONFLICT.',
+    description: 'Na primeira tentativa de pedido após ativar, a edição do primeiro item esgota (emitindo nft.updated) e o pedido responde 409 AVAILABILITY_CONFLICT.',
   },
   'order-timeout': {
     label: 'Timeout após criar pedido',
@@ -162,11 +163,11 @@ export const SCENARIOS: Record<ScenarioName, ScenarioDefinition> = {
   },
   'payment-confirmed': {
     label: 'Pagamento confirmado',
-    description: 'O pedido fica pendente por alguns segundos e é confirmado via order.updated.',
+    description: 'O pedido fica pendente por 3 s e é confirmado, como no cenário de sucesso.',
   },
   'payment-declined': {
     label: 'Pagamento recusado',
-    description: 'O pedido fica pendente e é recusado via order.updated. Os itens permanecem no carrinho.',
+    description: 'O pedido fica pendente por 3 s e é recusado. O carrinho permanece intacto.',
   },
   'favorite-failure': {
     label: 'Falha ao favoritar',
@@ -198,6 +199,7 @@ export const LATENCY_LABELS: Record<LatencyMode, string> = {
 let settings: MockSettings = loadSettings()
 let requestCounter = 0
 const failureCounts = new Map<EndpointId, number>()
+const consumedEffects = new Set<string>()
 const listeners = new Set<() => void>()
 
 function isScenarioName(value: unknown): value is ScenarioName {
@@ -237,6 +239,7 @@ function updateSettings(patch: Partial<MockSettings>): void {
 function resetRuntime(): void {
   requestCounter = 0
   failureCounts.clear()
+  consumedEffects.clear()
 }
 
 export function getSettings(): MockSettings {
@@ -254,6 +257,14 @@ export function activeScenario(): ScenarioName {
 
 export function isScenario(name: ScenarioName): boolean {
   return settings.scenario === name
+}
+
+export function consumeScenarioEffect(name: ScenarioName): boolean {
+  if (settings.scenario !== name || consumedEffects.has(name)) {
+    return false
+  }
+  consumedEffects.add(name)
+  return true
 }
 
 export function setScenario(name: ScenarioName): void {
