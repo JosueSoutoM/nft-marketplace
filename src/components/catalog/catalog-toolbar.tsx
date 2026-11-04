@@ -34,7 +34,7 @@ export function SegmentTabs({ segment, onChange }: SegmentTabsProps) {
             aria-pressed={active}
             onClick={() => onChange(option.id)}
             className={cn(
-              'relative shrink-0 py-1 text-body leading-6 whitespace-nowrap transition-colors hover:text-text-accent md:text-body-sm md:font-bold',
+              'relative shrink-0 py-1 text-body-sm leading-6 whitespace-nowrap transition-colors hover:text-text-accent md:font-bold',
               active
                 ? 'font-bold text-text-accent after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 after:bg-primary'
                 : 'text-foreground',

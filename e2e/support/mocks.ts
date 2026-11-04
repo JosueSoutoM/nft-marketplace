@@ -20,12 +20,20 @@ export type Scenario =
 
 export type Latency = 'none' | 'fixed' | 'slow' | 'variable'
 
+export type Settlement = 'auto' | 'manual'
+
 interface MockControls {
   setScenario: (name: Scenario) => void
   setLatency: (mode: Latency) => void
   expireSessions: () => void
   updateNft: (nftId: string, update: { editionId?: string; price?: string; available?: number }) => unknown
   getRealtimeStatus: () => { connections: Array<{ id: string; userId: string | null }> }
+  setSettlement: (mode: Settlement) => void
+  advanceOrder: (orderId: string, status?: 'confirmed' | 'declined') => unknown
+  dropRealtime: () => number
+  refuseRealtime: (seconds: number) => void
+  replayLastEvent: () => { type: string; version: number } | null
+  sendStaleEvent: () => { type: string; version: number } | null
 }
 
 declare global {
@@ -38,13 +46,15 @@ interface OpenOptions {
   scenario?: Scenario
   latency?: Latency
   mockPanel?: 'visible' | 'hidden'
+  settlement?: Settlement
 }
 
-export async function openApp(page: Page, path = '/', { scenario = 'success', latency = 'none', mockPanel = 'hidden' }: OpenOptions = {}) {
+export async function openApp(page: Page, path = '/', { scenario = 'success', latency = 'none', mockPanel = 'hidden', settlement = 'auto' }: OpenOptions = {}) {
   const url = new URL(path, 'http://app.local')
   url.searchParams.set('scenario', scenario)
   url.searchParams.set('latency', latency)
   url.searchParams.set('mockPanel', mockPanel)
+  url.searchParams.set('settlement', settlement)
   await page.goto(`${url.pathname}${url.search}${url.hash}`)
   await page.waitForFunction(() => '__mocks' in window)
 }

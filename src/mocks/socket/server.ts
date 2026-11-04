@@ -11,6 +11,7 @@ const ENGINE_IO_PING_INTERVAL_MS = 25_000
 const SOCKET_IO_CONNECT_PREFIX = '40'
 const CLOSE_SERVICE_RESTART = 1012
 const CLOSE_TRY_AGAIN_LATER = 1013
+const REFUSAL_CLOSE_DELAY_MS = 50
 const DEFAULT_STALE_NFT_ID = 'emerald-ape-042'
 const STALE_PRICE = '0.01'
 
@@ -113,7 +114,8 @@ const realtime = ws.link(`${REALTIME_PATH}/`)
 export const realtimeHandler = realtime.addEventListener('connection', (wsConnection) => {
   const { client } = wsConnection
   if (refusingUntil > Date.now()) {
-    client.close(CLOSE_TRY_AGAIN_LATER, 'Realtime unavailable')
+    toSocketIo(wsConnection)
+    setTimeout(() => client.close(CLOSE_TRY_AGAIN_LATER, 'Realtime unavailable'), REFUSAL_CLOSE_DELAY_MS)
     return
   }
 

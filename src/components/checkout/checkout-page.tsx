@@ -229,6 +229,9 @@ function CheckoutScreen({ userId }: { userId: string }) {
     clearError('wallet')
   }
 
+  const walletResolved = choice?.source === 'other' || (choice?.source === 'saved' && isConnectedOn(savedWallet, network))
+  const visibleErrors: CheckoutErrors = { ...errors, wallet: walletResolved ? undefined : errors.wallet }
+  const hasVisibleErrors = Object.values(visibleErrors).some(Boolean)
   const items = cart.data?.items ?? []
   const pendingAttempt = !!draft?.attempt?.pending && submission.status !== 'idle'
 
@@ -284,7 +287,7 @@ function CheckoutScreen({ userId }: { userId: string }) {
           {pendingOrders.data && pendingOrders.data.length > 0 && !submission.busy && (
             <PendingOrdersNotice orderIds={pendingOrders.data.map((order) => order.id)} />
           )}
-          {summary && (
+          {summary && hasVisibleErrors && (
             <div key={summary.id} role="alert" className="mb-6 flex items-start gap-2 rounded-sm border border-text-coral p-3 text-body-sm text-text-coral">
               <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
               {summary.message}
@@ -295,7 +298,7 @@ function CheckoutScreen({ userId }: { userId: string }) {
           )}
           <CollectorForm
             values={draft.values}
-            errors={errors}
+            errors={visibleErrors}
             wallet={choice}
             savedWallet={savedWallet}
             network={network}
@@ -338,7 +341,7 @@ function CheckoutScreen({ userId }: { userId: string }) {
             choice={choice}
             network={network}
             networks={networkList}
-            error={errors.wallet}
+            error={visibleErrors.wallet}
             disabled={locked}
             focusRef={fieldRef('wallet')}
             onSelect={selectWallet}

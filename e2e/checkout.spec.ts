@@ -1,115 +1,25 @@
-import { expect, test, type Locator, type Page, type Request } from '@playwright/test'
-import { openApp, setScenario, type Scenario } from './support/mocks'
-
-const PASSWORD = 'Kurio#2026'
-const ANA = { email: 'ana@kurio.test', name: 'Ana Ribeiro', id: 'user-ana' }
-const BRUNO = { email: 'bruno@kurio.test', name: 'Bruno Tavares', id: 'user-bruno' }
-const EMERALD = { nftId: 'emerald-ape-042', editionId: 'limited-50', quantity: 2 }
-const IVORY = { nftId: 'ivory-baron-088', editionId: 'limited-10', quantity: 1 }
-
-interface SeedItem {
-  nftId: string
-  editionId: string
-  quantity: number
-}
-
-async function seedGuestCart(page: Page, items: SeedItem[]) {
-  await page.evaluate(async (entries) => {
-    const guestCartId = localStorage.getItem('kurio.guest-cart-id') ?? crypto.randomUUID()
-    localStorage.setItem('kurio.guest-cart-id', guestCartId)
-    for (const entry of entries) {
-      const response = await fetch('/api/cart/items', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Guest-Cart-Id': guestCartId },
-        body: JSON.stringify(entry),
-      })
-      if (!response.ok) {
-        throw new Error(`cart ${response.status}`)
-      }
-    }
-  }, items)
-}
-
-async function signIn(page: Page, email: string) {
-  await page.getByLabel('E-mail', { exact: true }).fill(email)
-  await page.getByLabel('Senha', { exact: true }).fill(PASSWORD)
-  await page.getByRole('button', { name: 'Entrar', exact: true }).click()
-}
-
-async function openCheckout(page: Page, items: SeedItem[] = [EMERALD], scenario: Scenario = 'success') {
-  await openApp(page, '/', { scenario })
-  await seedGuestCart(page, items)
-  await page.goto('/login?redirect=%2Fcheckout')
-  await signIn(page, ANA.email)
-  await expect(page).toHaveURL(/\/checkout$/)
-  await expect(page.locator('[data-slot="checkout-line"]')).toHaveCount(items.length)
-  await expect(page.getByLabel('Nome de exibição')).toHaveValue(ANA.name)
-}
-
-function field(page: Page, label: string): Locator {
-  return page.getByLabel(label, { exact: false }).first()
-}
-
-function walletOption(page: Page, label: RegExp): Locator {
-  return page.locator('[data-slot="wallet-option"]').filter({ has: page.getByRole('radio', { name: label }) })
-}
-
-async function connectPrimary(page: Page) {
-  await page.getByRole('button', { name: 'Conectar MetaMask' }).click()
-  await expect(walletOption(page, /MetaMask/).locator('[data-slot="wallet-status"]')).toHaveText('Conectada na rede Ethereum')
-}
-
-function reviewDialog(page: Page): Locator {
-  return page.getByRole('dialog', { name: 'Revise sua compra' })
-}
-
-function confirmButton(page: Page): Locator {
-  return reviewDialog(page).getByRole('button', { name: 'Confirmar e enviar pedido' })
-}
-
-async function openReview(page: Page) {
-  await page.getByRole('button', { name: 'Confirmar compra' }).click()
-  await expect(reviewDialog(page)).toBeVisible()
-}
-
-function trackOrderRequests(page: Page): Request[] {
-  const requests: Request[] = []
-  page.on('request', (request) => {
-    if (request.method() === 'POST' && new URL(request.url()).pathname === '/api/orders') {
-      requests.push(request)
-    }
-  })
-  return requests
-}
-
-async function listOrderIds(page: Page): Promise<string[]> {
-  return page.evaluate(async () => {
-    const { token } = JSON.parse(localStorage.getItem('kurio.session') ?? '{}') as { token?: string }
-    const response = await fetch('/api/orders', { headers: { Authorization: `Bearer ${token}` } })
-    const body = (await response.json()) as { items: Array<{ id: string }> }
-    return body.items.map((order) => order.id)
-  })
-}
-
-async function cartItemCount(page: Page): Promise<number> {
-  return page.evaluate(async () => {
-    const { token } = JSON.parse(localStorage.getItem('kurio.session') ?? '{}') as { token?: string }
-    const response = await fetch('/api/cart', { headers: { Authorization: `Bearer ${token}` } })
-    return ((await response.json()) as { itemCount: number }).itemCount
-  })
-}
-
-async function storedDrafts(page: Page): Promise<Array<{ userId?: string; data?: { attempt?: { key?: string } | null } }>> {
-  return page.evaluate(() =>
-    Object.keys(sessionStorage)
-      .filter((key) => key.startsWith('kurio.resume.'))
-      .map((key) => JSON.parse(sessionStorage.getItem(key) ?? '{}') as { userId?: string; data?: { attempt?: { key?: string } | null } }),
-  )
-}
-
-async function waitForRealtime(page: Page) {
-  await page.waitForFunction(() => (window.__mocks?.getRealtimeStatus().connections.length ?? 0) > 0)
-}
+import { expect, test } from '@playwright/test'
+import {
+  ANA,
+  BRUNO,
+  EMERALD,
+  IVORY,
+  cartItemCount,
+  confirmButton,
+  connectPrimary,
+  field,
+  listOrderIds,
+  openCheckout,
+  openReview,
+  reviewDialog,
+  seedGuestCart,
+  signIn,
+  storedDrafts,
+  trackOrderRequests,
+  waitForRealtime,
+  walletOption,
+} from './support/checkout'
+import { openApp, setScenario } from './support/mocks'
 
 test('prefills the collector profile and validates the fields with a focused summary', async ({ page }) => {
   await openCheckout(page)
@@ -139,7 +49,10 @@ test('prefills the collector profile and validates the fields with a focused sum
   await displayName.fill('Ana Ribeiro')
   await expect(displayName).not.toHaveAttribute('aria-invalid', 'true')
   await email.fill('ana@kurio.test')
+  await expect(page.getByText('Conecte a carteira na rede Ethereum para continuar.')).toBeVisible()
   await connectPrimary(page)
+  await expect(page.getByText('Conecte a carteira na rede Ethereum para continuar.')).toHaveCount(0)
+  await expect(page.getByRole('alert').filter({ hasText: 'Revise 3 campos' })).toHaveCount(0)
   await openReview(page)
 })
 
@@ -271,7 +184,7 @@ test('keeps the items when an edition sells out during the purchase and accepts 
 })
 
 test('creates a single order when the confirm button is double clicked', async ({ page }) => {
-  await openCheckout(page)
+  await openCheckout(page, [EMERALD], 'success', 'manual')
   await connectPrimary(page)
   const requests = trackOrderRequests(page)
   await openReview(page)
@@ -279,7 +192,11 @@ test('creates a single order when the confirm button is double clicked', async (
   await confirmButton(page).dblclick()
 
   await expect(page).toHaveURL(/\/orders\/order-0001$/)
+  await expect(page.getByRole('heading', { level: 1, name: 'Aguardando confirmação do pagamento' })).toBeVisible()
   expect(requests).toHaveLength(1)
+  expect(await listOrderIds(page)).toEqual(['order-0001'])
+  await page.evaluate(() => window.__mocks?.advanceOrder('order-0001'))
+  await expect(page.getByRole('heading', { level: 1, name: 'Seus NFTs agora estão na sua carteira' })).toBeFocused()
   expect(await listOrderIds(page)).toEqual(['order-0001'])
 })
 
@@ -302,6 +219,9 @@ test('recovers the same order with the same key after the creation times out', a
 
   await page.clock.fastForward(1000)
   await expect(page).toHaveURL(/\/orders\/order-0001$/)
+  await page.clock.fastForward(3000)
+  await expect(page.getByRole('heading', { level: 1, name: 'Seus NFTs agora estão na sua carteira' })).toBeVisible()
+  await expect(page.locator('[data-slot="order-total"]')).toHaveText('2.396 ETH')
 
   expect(requests).toHaveLength(2)
   const keys = await Promise.all(requests.map((request) => request.headerValue('idempotency-key')))

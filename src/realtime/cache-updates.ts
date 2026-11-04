@@ -98,8 +98,13 @@ export function applyNftUpdated(queryClient: QueryClient, event: NftUpdatedEvent
   }
 }
 
+function isOrderObserved(queryClient: QueryClient, userId: string, orderId: string): boolean {
+  return (queryClient.getQueryCache().find({ queryKey: queryKeys.orders.detail(userId, orderId) })?.getObserversCount() ?? 0) > 0
+}
+
 export function applyOrderUpdated(queryClient: QueryClient, event: OrderUpdatedEvent, userId: string): void {
   const orderId = event.resource.id
+  const observed = isOrderObserved(queryClient, userId, orderId)
   queryClient.setQueryData<Order>(queryKeys.orders.detail(userId, orderId), (order) =>
     !order || (!isTerminalOrder(order) && order.version < event.version) ? event.data : order,
   )
@@ -108,9 +113,14 @@ export function applyOrderUpdated(queryClient: QueryClient, event: OrderUpdatedE
   if (event.data.status === 'confirmed') {
     void queryClient.invalidateQueries({ queryKey: queryKeys.cart(userId) })
     void queryClient.invalidateQueries({ queryKey: queryKeys.quotes.all(userId) })
-    announce('Pagamento confirmado. Seus NFTs já estão na sua carteira.')
+  }
+  if (observed) {
+    return
+  }
+  if (event.data.status === 'confirmed') {
+    announce(`Pagamento do pedido ${orderId} confirmado. Seus NFTs já estão na sua carteira.`)
   } else if (event.data.status === 'declined') {
-    announce('O pagamento foi recusado. Os itens continuam no seu carrinho.')
+    announce(`O pagamento do pedido ${orderId} foi recusado. Os itens continuam no seu carrinho.`)
   }
 }
 

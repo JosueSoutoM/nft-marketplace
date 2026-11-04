@@ -1,8 +1,8 @@
 import type { Network, NetworkId, Nft, Order, Quote, Wallet } from '@/api/contracts'
 import type { CouponFixture } from '../fixtures/coupons'
 
-export const DB_STORAGE_KEY = 'kurio.mocks.db.v2'
-export const DB_SCHEMA_VERSION = 2
+export const DB_STORAGE_KEY = 'kurio.mocks.db.v3'
+export const DB_SCHEMA_VERSION = 3
 
 export interface UserRecord {
   id: string

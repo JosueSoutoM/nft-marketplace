@@ -46,10 +46,14 @@ export interface ScenarioDefinition {
   failure?: FailureRule
 }
 
+export const SETTLEMENT_MODES = ['auto', 'manual'] as const
+export type SettlementMode = (typeof SETTLEMENT_MODES)[number]
+
 export interface MockSettings {
   scenario: ScenarioName
   latency: LatencyMode
   sessionTtlSeconds: number
+  settlement: SettlementMode
 }
 
 export const FIXED_LATENCY_MS = 300
@@ -67,6 +71,7 @@ const DEFAULT_SETTINGS: MockSettings = {
   scenario: 'success',
   latency: 'fixed',
   sessionTtlSeconds: DEFAULT_SESSION_TTL_SECONDS,
+  settlement: 'auto',
 }
 
 const SERVICE_UNAVAILABLE: FailureResponse = {
@@ -210,6 +215,10 @@ function isLatencyMode(value: unknown): value is LatencyMode {
   return typeof value === 'string' && (LATENCY_MODES as readonly string[]).includes(value)
 }
 
+function isSettlementMode(value: unknown): value is SettlementMode {
+  return typeof value === 'string' && (SETTLEMENT_MODES as readonly string[]).includes(value)
+}
+
 function loadSettings(): MockSettings {
   try {
     const parsed = JSON.parse(localStorage.getItem(SETTINGS_STORAGE_KEY) ?? 'null') as Partial<MockSettings> | null
@@ -220,6 +229,7 @@ function loadSettings(): MockSettings {
         typeof parsed?.sessionTtlSeconds === 'number' && parsed.sessionTtlSeconds > 0
           ? parsed.sessionTtlSeconds
           : DEFAULT_SETTINGS.sessionTtlSeconds,
+      settlement: isSettlementMode(parsed?.settlement) ? parsed.settlement : DEFAULT_SETTINGS.settlement,
     }
   } catch {
     return { ...DEFAULT_SETTINGS }
@@ -293,6 +303,17 @@ export function setSessionTtl(seconds: number): void {
   updateSettings({ sessionTtlSeconds: seconds })
 }
 
+export function setSettlement(mode: SettlementMode): void {
+  if (!isSettlementMode(mode)) {
+    throw new Error(`Unknown settlement mode: ${String(mode)}`)
+  }
+  updateSettings({ settlement: mode })
+}
+
+export function isManualSettlement(): boolean {
+  return settings.settlement === 'manual'
+}
+
 export function resetSettings(): void {
   updateSettings({ ...DEFAULT_SETTINGS })
   resetRuntime()
@@ -357,8 +378,14 @@ export function applyUrlOverrides(): void {
   const url = new URL(window.location.href)
   const scenario = url.searchParams.get('scenario')
   const latency = url.searchParams.get('latency')
-  if (scenario === null && latency === null) {
+  const settlement = url.searchParams.get('settlement')
+  if (scenario === null && latency === null && settlement === null) {
     return
+  }
+  if (isSettlementMode(settlement)) {
+    setSettlement(settlement)
+  } else if (settlement !== null) {
+    console.warn(`[mocks] Modo de liquidação desconhecido: ${settlement}`)
   }
   if (isScenarioName(scenario)) {
     setScenario(scenario)
@@ -372,5 +399,6 @@ export function applyUrlOverrides(): void {
   }
   url.searchParams.delete('scenario')
   url.searchParams.delete('latency')
+  url.searchParams.delete('settlement')
   window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`)
 }

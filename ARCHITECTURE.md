@@ -17,6 +17,7 @@ src/
   assets/icons/           SVGs otimizados (Google e Facebook)
   components/
     cart/                 tela do carrinho: itens, quantidade, cupom, resumo, avisos, estados e contador
+    order/                tela do pedido: pendente, confirmado (recibo), recusado, não encontrado, explorador simulado e cópia do ID
     checkout/             pagamento: formulário do colecionador, carteiras, resumo da cotação, revisão, revalidação e envio idempotente
     catalog/              catálogo: busca, filtros, segmentos, ordenação, grade, estados e paginação
     favorites/            botão de favorito (card, detalhe desktop e detalhe mobile)
@@ -207,7 +208,7 @@ pending ──(liquidação)──▶ confirmed   (terminal)
 ```
 
 - O pedido nasce `pending` (`version` 1) com o resultado planejado: `declined` no cenário `payment-declined`, `confirmed` nos demais. A liquidação ocorre 3 s depois (`settleAt`, gravado no banco), por timer. Se a página recarregar, os pedidos pendentes são reagendados ao iniciar os mocks; leituras (`GET /api/orders`, `GET /api/orders/:id` e o replay idempotente) também liquidam pedidos vencidos.
-- Confirmação: confere o estoque de cada edição. Se faltar, o pedido vira `declined` com `AVAILABILITY_LOST` e nada muda. Caso contrário, baixa o estoque (emitindo `nft.updated`), remove do carrinho do usuário apenas os itens e quantidades comprados e grava `transaction` (hash de 64 hex derivado do pedido e link simulado do explorador da rede).
+- Confirmação: confere o estoque de cada edição. Se faltar, o pedido vira `declined` com `AVAILABILITY_LOST` e nada muda. Caso contrário, baixa o estoque (emitindo `nft.updated`), remove do carrinho do usuário apenas os itens e quantidades comprados e grava `transaction` (hash de 64 hex derivado do pedido e endereço do explorador simulado da rede, em `explorer.kurio.test`, domínio reservado que não leva a nenhum explorador real).
 - Recusa: `decline.code = PAYMENT_DECLINED`; estoque, itens e cupom do carrinho ficam intactos.
 - Não há reserva de estoque entre a criação e a confirmação: o estoque só é baixado na confirmação, e um pedido cujo estoque acabou nesse intervalo é recusado com `AVAILABILITY_LOST`.
 - Cada transição incrementa `version` e emite `order.updated`. Estados terminais nunca mudam; `advanceOrder` em um pedido terminal devolve o pedido inalterado.
@@ -243,7 +244,7 @@ pending ──(liquidação)──▶ confirmed   (terminal)
 | Evento | Destinatários | `data` | Efeito no cliente |
 | --- | --- | --- | --- |
 | `nft.updated` | Todas as conexões, inclusive visitantes | `editions`, `price`, `compareAtPrice` | Atualiza o detalhe, os itens das listas, o índice e as listas de favoritos em cache; invalida carrinho e cotação |
-| `order.updated` | Somente a conexão autenticada como dona do pedido | `Order` completo | Atualiza o pedido em cache; invalida as listas de pedidos; na confirmação, invalida carrinho e cotação |
+| `order.updated` | Somente a conexão autenticada como dona do pedido | `Order` completo | Atualiza o pedido em cache (nunca regride um estado terminal); invalida as listas de pedidos; na confirmação, invalida carrinho e cotação; anuncia o resultado só quando a tela do pedido não está aberta |
 
 Os dois eventos têm o mesmo envelope (`src/api/contracts/events.ts`):
 
@@ -418,7 +419,7 @@ Adicionar pelo detalhe com edição e quantidade, notificação e contador; conf
 
 ## Pagamento
 
-Rota privada `/checkout` (`src/routes/_authenticated/checkout.tsx`), componentes em `src/components/checkout/` e regras puras em `src/lib/checkout.ts` (formulário, validação, mapeamento de `fieldErrors`, corpo do pedido e rascunho) e `src/lib/quote-changes.ts` (diferenças de cotação em texto). A tela nunca mostra compra confirmada: depois de criado, o pedido (`pending`) é gravado no cache e o usuário vai para `/orders/$orderId`, que acompanha o estado.
+Rota privada `/checkout` (`src/routes/_authenticated/checkout.tsx`), componentes em `src/components/checkout/` e regras puras em `src/lib/checkout.ts` (formulário, validação, mapeamento de `fieldErrors`, corpo do pedido e rascunho) e `src/lib/quote-changes.ts` (diferenças de cotação em texto). A tela nunca mostra compra confirmada: depois de criado, o pedido (`pending`) é gravado no cache e o usuário vai para `/orders/$orderId`, que acompanha o estado (ver "Pedido").
 
 Nada de carteira ou blockchain real: não há bibliotecas de carteira nem acesso a `window.ethereum`. Conexão, recusa, desconexão, pagamento e transação vêm da API simulada.
 
@@ -439,7 +440,7 @@ Nada de carteira ou blockchain real: não há bibliotecas de carteira nem acesso
 
 - Campos do Figma: nome de exibição, nome de usuário, rede, nome do perfil, endereço da carteira, ENS ou carteira secundária (opcional), tipo de carteira, código de indicação, e-mail, nome ENS (com o sufixo `.eth` fixo), "Usar outra carteira?" e observação (opcional, até 500 caracteres).
 - Preenchimento inicial: nome, usuário, e-mail e ENS do perfil; nome do perfil e código de indicação da carteira principal. Com uma carteira cadastrada selecionada, endereço, tipo e ENS secundário são os dela (somente leitura). "Usar outra carteira?" libera esses três campos e envia `payment.source = 'other'`.
-- A validação no cliente usa as mesmas funções dos mocks (`src/lib/validation.ts`). Cada campo tem `label` visível com asterisco (`aria-hidden`) e `aria-required`, `aria-invalid` e `aria-describedby` com a mensagem. No envio, um resumo (`role="alert"`) é anunciado ("Revise 3 campos: Nome de exibição, E-mail e Carteira.") e o foco vai para o primeiro campo inválido, na ordem visual. Carteira sem conexão na rede escolhida é um erro do campo "Carteira", e o foco vai para o botão "Conectar" da carteira selecionada.
+- A validação no cliente usa as mesmas funções dos mocks (`src/lib/validation.ts`). Cada campo tem `label` visível com asterisco (`aria-hidden`) e `aria-required`, `aria-invalid` e `aria-describedby` com a mensagem. No envio, um resumo (`role="alert"`) é anunciado ("Revise 3 campos: Nome de exibição, E-mail e Carteira.") e o foco vai para o primeiro campo inválido, na ordem visual. Carteira sem conexão na rede escolhida é um erro do campo "Carteira", e o foco vai para o botão "Conectar" da carteira selecionada. O erro da carteira (do cliente ou o `WALLET_NOT_CONNECTED` da API) é exibido só enquanto a condição existir: assim que a carteira escolhida fica conectada na rede escolhida, ou "Usar outra carteira?" é marcado, a mensagem some. O resumo de erros também some quando não resta nenhum erro visível.
 - `fieldErrors` da API (`collector.email`, `payment.address`, `note` etc.) são mapeados para os mesmos campos por `toCheckoutErrors`, com o mesmo resumo e foco; a revisão é fechada. Como a região `aria-live` global fica com `aria-hidden` enquanto o diálogo está aberto, o resumo é anunciado de novo depois que o diálogo fecha, junto com o foco no campo. Os itens do carrinho não mudam.
 
 ### Carteira e rede
@@ -498,6 +499,52 @@ Nada de carteira ou blockchain real: não há bibliotecas de carteira nem acesso
 ### Testes (`e2e/checkout.spec.ts`)
 
 Preenchimento pelo perfil e validação com resumo e foco; revisão com dados, carteira, rede, itens e totais, Esc com retorno do foco e envio até `/orders/order-0001`; recusa da carteira (`wallet-rejected`), conexão e desconexão; preço alterado por `__mocks.updateNft` durante a revisão, com de/para, bloqueio do envio e nova confirmação; `price-changed` (409 com chave nova para a nova cotação e um único pedido); `edition-sold-out` sem perder itens e compra depois de ajustar o carrinho; clique duplo com uma requisição e um pedido; `order-timeout` com `page.clock` (timeout aos 10 s, nova tentativa com a mesma chave e o mesmo pedido); expiração com restauração do rascunho; logout que apaga o rascunho e a chave guardada, sem restauração ao entrar de novo; erro de campo da API no pedido (`form-validation`) com foco, anúncio e carrinho intacto; isolamento ana → bruno; carrinho vazio; skeleton da cotação sem deslocamento com latência lenta.
+
+## Pedido
+
+Rota privada `/orders/$orderId` (`src/routes/_authenticated/orders.$orderId.tsx`), componentes em `src/components/order/`.
+
+### Dados
+
+- `useOrder(orderId)` (`src/hooks/use-orders.ts`) consulta `GET /api/orders/:id` na chave `['user', userId, 'orders', 'detail', orderId]`. O conteúdo fica num componente com `key` de usuário e pedido: trocar de usuário descarta o estado.
+- `staleTime` é 0 enquanto o pedido está `pending` (montar a tela ou voltar a ela consulta a API) e infinito quando está `confirmed` ou `declined`. Não há polling: a atualização vem do `order.updated`, da reconciliação na reconexão do socket e do botão "Atualizar status".
+- Terminais nunca regridem. `newestOrder(cached, incoming)` é aplicado a toda resposta REST: um pedido terminal em cache não é trocado por um `pending`, e uma versão menor não substitui uma maior (cobre uma consulta iniciada antes de o evento chegar). No socket, o `RealtimeClient` já descarta duplicatas (`id`), versões antigas e qualquer evento para um pedido terminal em cache.
+- 404 (pedido inexistente ou de outro usuário, como Bruno abrindo um pedido de Ana) mostra "Pedido não encontrado" com "Voltar ao catálogo", sem nenhum dado do pedido. Outras falhas mostram a mensagem da API e "Tentar novamente".
+
+### Estados
+
+O estado exibido é sempre o `status` do pedido vindo da API ou do `order.updated`; o cliente nunca deduz confirmação.
+
+- `pending`: "Aguardando confirmação do pagamento", com o número e a data do pedido, rede, carteira, itens e totais do snapshot. Uma linha informa o estado do tempo real ("A confirmação aparece aqui automaticamente, em tempo real." ou "A conexão em tempo real caiu. Estamos reconectando…"). "Atualizar status" consulta a API; se o pedido continua pendente, isso é anunciado.
+- `confirmed`: recibo do Figma (ver abaixo).
+- `declined`: "Pagamento recusado", com o motivo da API (`decline.reason`), o aviso de que os itens continuam no carrinho, "Voltar ao pagamento" e "Ver carrinho", e o resumo do pedido recusado. A nova tentativa no checkout parte de uma cotação nova e, como o rascunho foi apagado, de uma nova chave de idempotência.
+
+### Chegada a um estado terminal
+
+`useTerminalEffects` roda uma vez por estado terminal:
+
+- invalida carrinho, cotações e listas de pedidos do usuário (na confirmação, o carrinho passa a mostrar só o que não foi comprado e o contador do header se atualiza);
+- apaga o rascunho do checkout e a tentativa com a chave de idempotência;
+- leva o foco ao título (`h1` com `tabIndex=-1`) do novo estado;
+- anuncia o resultado uma única vez ("Pagamento confirmado. Seus NFTs agora estão na sua carteira. Pedido order-0001." ou "Pagamento recusado. <motivo> Os itens continuam no seu carrinho."), apenas quando a tela viu o pedido pendente antes. Abrir direto um pedido já terminal não gera anúncio; o foco no título informa o estado.
+- Para não anunciar duas vezes, `applyOrderUpdated` só anuncia quando nenhuma tela observa o detalhe do pedido (por exemplo, se o usuário saiu da tela antes da liquidação).
+
+### Recibo
+
+- Todos os valores vêm de `order.receipt`, o snapshot gravado na criação: linhas (imagem, nome, token, edição, quantidade, subtotal da linha), subtotal, desconto (com o cupom, quando houver), taxa de rede, total, rede e carteira. Nada vem do catálogo ou do carrinho; o teste altera o preço do NFT comprado com `__mocks.updateNft` e confere que o recibo não muda, também após o refresh.
+- Faixa de informações: ID da transação (abreviado, com o hash completo para leitores de tela e no `title`), data da confirmação, total e carteira. O botão de copiar usa a Clipboard API e anuncia "ID da transação copiado." (ou a falha, indicando onde ver o hash completo).
+- "Ver no explorador (simulado)" abre um diálogo "Explorador simulado" com hash, status, rede, data, carteira, valor e o endereço simulado (`https://explorer.kurio.test/<rede>/tx/<hash>`), deixando claro que nenhuma rede ou explorador real foi consultado. Não há link para exploradores reais.
+- Ações: "Voltar ao catálogo", "Ver carrinho" e o "X" do Figma (fechar e voltar ao catálogo).
+
+### Recuperação
+
+- Refresh com pedido pendente: a tela consulta a API e continua pendente; nada é reenviado.
+- Queda do socket: durante a queda o evento é perdido; ao reconectar, `reconcileActiveQueries` invalida os pedidos e a consulta traz o estado atual, aplicando os mesmos efeitos terminais.
+- O checkout também consulta `GET /api/orders?status=pending` e mostra o pedido em andamento (ver "Pagamento").
+
+### Testes (`e2e/orders.spec.ts`)
+
+Compra completa do catálogo ao recibo com `page.clock` (a liquidação de 3 s acontece no `fastForward`), com foco, anúncio, valores do snapshot, cópia do ID, explorador simulado, carrinho vazio e rascunho apagado; pagamento recusado com itens preservados, nova tentativa com chave nova e `order-0002`; refresh com pedido pendente e "Atualizar status"; queda do socket (`refuseRealtime`) com pedido liquidado durante a queda e retomada pela API; `order.updated` duplicado e antigo ignorados, sem regressão nem novo anúncio; recibo imutável após `updateNft`; remoção parcial do carrinho (itens adicionados depois da criação permanecem); Bruno recebe "Pedido não encontrado" para o pedido de Ana. Em `e2e/checkout.spec.ts`, clique duplo e `order-timeout` seguem até o recibo, com um único pedido.
 
 ## Estado do catálogo na URL
 
@@ -591,7 +638,7 @@ As chaves vêm de `src/lib/query-keys.ts`. Dados privados ficam sob `['user', us
 ### Estado e feedback
 
 - `useRealtimeStatus()` devolve `idle`, `connecting`, `connected`, `reconnecting` ou `disconnected`.
-- `announce(message)` (`src/lib/announcer.ts`) publica mensagens numa região `aria-live="polite"` única (`LiveAnnouncer`, no layout raiz). A camada de tempo real anuncia mudanças de preço e disponibilidade na edição de cada item do carrinho ("Emerald Ape #042, edição 1/50, no carrinho: Preço alterado de 1.19 ETH para 1.31 ETH.") e a confirmação ou recusa do pagamento. Com o detalhe do NFT aberto, o anúncio fica com a tela de detalhe, que conhece a edição selecionada; assim a mesma mudança não é anunciada duas vezes.
+- `announce(message)` (`src/lib/announcer.ts`) publica mensagens numa região `aria-live="polite"` única (`LiveAnnouncer`, no layout raiz). A camada de tempo real anuncia mudanças de preço e disponibilidade na edição de cada item do carrinho ("Emerald Ape #042, edição 1/50, no carrinho: Preço alterado de 1.19 ETH para 1.31 ETH.") e a confirmação ou recusa do pagamento quando a tela do pedido não está aberta (com ela aberta, o anúncio é da tela, uma única vez). Com o detalhe do NFT aberto, o anúncio fica com a tela de detalhe, que conhece a edição selecionada; assim a mesma mudança não é anunciada duas vezes.
 
 ## Mocks e cenários
 
@@ -621,14 +668,14 @@ Cada handler é registrado por `apiRoute(endpoint, resolver)`, que aplica a lat�
 
 ### Banco simulado
 
-- Um único objeto (`MockDatabase`) com usuários, sessões, NFTs, redes, favoritos, carrinhos, cupons, cotações, pedidos, carteiras e conexões de carteira, salvo em `localStorage` na chave `kurio.mocks.db.v2` a cada alteração. A versão do esquema faz parte da chave; um esquema diferente é descartado e substituído pelo seed.
+- Um único objeto (`MockDatabase`) com usuários, sessões, NFTs, redes, favoritos, carrinhos, cupons, cotações, pedidos, carteiras e conexões de carteira, salvo em `localStorage` na chave `kurio.mocks.db.v3` a cada alteração (v3: endereços do explorador simulado nas redes). A versão do esquema faz parte da chave; um esquema diferente é descartado e substituído pelo seed.
 - Senhas são guardadas apenas como hash PBKDF2-SHA-256 (100 000 iterações) com salt por usuário, via Web Crypto. Tokens de sessão são aleatórios (32 bytes) e o banco guarda apenas o SHA-256 do token.
 - Sessões têm expiração fixa (TTL padrão de 2 horas, configurável por `window.__mocks.setSessionTtl(segundos)`). Sessões expiradas continuam registradas por 24 horas para responder `SESSION_EXPIRED` em vez de `UNAUTHENTICATED`.
 - Identificadores criados pela simulação usam contadores (`user-0001`, `cart-0001`, `item-0001`, `quote-0001`, `order-0001`, `wallet-0001`), o que mantém os testes determinísticos. Cada carrinho guarda as 5 cotações mais recentes.
 
 ### Reset
 
-O reset cancela os timers de liquidação, recria o seed (catálogo, redes, usuários, carteiras, favoritos e cupons), apaga sessões, carrinhos, cotações, pedidos e conexões de carteira e volta ao cenário `success` com latência fixa. Ele está disponível no painel ("Restaurar dados", que também recarrega a página) e em `await window.__mocks.reset()`.
+O reset cancela os timers de liquidação, recria o seed (catálogo, redes, usuários, carteiras, favoritos e cupons), apaga sessões, carrinhos, cotações, pedidos e conexões de carteira e volta ao cenário `success` com latência fixa e liquidação automática. Ele está disponível no painel ("Restaurar dados", que também recarrega a página) e em `await window.__mocks.reset()`.
 
 ### Fixtures
 
@@ -671,7 +718,7 @@ Os tipos dos eventos vêm de `src/api/contracts/events.ts`. Assinatura: `subscri
 - Cada conexão se inscreve no barramento ao abrir e cancela a inscrição ao fechar; o mesmo acontece com o ping.
 - O servidor envia o ping do Engine.IO (`2`) a cada 25 s, o intervalo anunciado no handshake do binding. Sem ele, o cliente fecharia a conexão por ping timeout após 30 s.
 - O token é lido da mensagem crua do pacote CONNECT (`40{...}`), porque o binding só decodifica pacotes de evento.
-- Ferramentas de teste (painel, seção "Tempo real", e `window.__mocks`): derrubar as conexões (o servidor fecha o websocket com 1012 e o cliente reconecta), recusar novas conexões por N segundos (cada tentativa é fechada com 1013, simulando queda de rede), reenviar o último evento com o mesmo `id` (duplicata) e enviar um evento com versão anterior à atual (para NFTs, com preço 0.01 ETH; para pedidos, com status `pending`).
+- Ferramentas de teste (painel, seção "Tempo real", e `window.__mocks`): derrubar as conexões (o servidor fecha o websocket com 1012 e o cliente reconecta), recusar novas conexões por N segundos (cada tentativa recebe o handshake do Engine.IO e é fechada com 1013 logo depois, simulando queda de rede; fechar antes do handshake deixaria o cliente parado até o timeout de conexão de 20 s do Socket.IO, em vez de seguir o backoff de reconexão), reenviar o último evento com o mesmo `id` (duplicata) e enviar um evento com versão anterior à atual (para NFTs, com preço 0.01 ETH; para pedidos, com status `pending`).
 
 ### Credenciais fictícias
 
@@ -720,7 +767,8 @@ Os cenários de falha genérica (`network-error`, `server-error`, `service-unava
 ### Como selecionar
 
 - Query string: `?scenario=<nome>&latency=<modo>` em qualquer URL. Os valores são aplicados, persistidos e removidos da URL antes de o router iniciar.
-- `localStorage`: chave `kurio.mocks.settings.v1` (`{ scenario, latency, sessionTtlSeconds }`). A escolha sobrevive ao refresh.
+- `localStorage`: chave `kurio.mocks.settings.v1` (`{ scenario, latency, sessionTtlSeconds, settlement }`). A escolha sobrevive ao refresh.
+- Liquidação dos pedidos: `settlement=auto` (padrão: o pedido é liquidado 3 s depois da criação, por timer) ou `settlement=manual` (o pedido fica `pending` até `__mocks.advanceOrder`). Pode vir na query string (`?settlement=manual`) ou de `__mocks.setSettlement`; voltar a `auto` reagenda os pendentes. Os testes que precisam observar o estado pendente usam o modo manual; os sensíveis a tempo usam `page.clock` com o modo automático.
 - Painel: botão redondo de 28 px, só com ícone e nome acessível ("Painel de simulação da API (cenário: …)"), no canto superior esquerdo da página. Ele não é fixo: fica na margem acima do conteúdo (antes do header no desktop e da busca no mobile) e rola junto com a página, então não cobre cards nem a barra inferior em nenhum viewport. Oferece seleção de cenário e latência; na seção "Tempo real", o estado do cliente, as conexões vistas pelo servidor, o último evento e as ferramentas do socket; e os botões "Expirar sessões" e "Restaurar dados". Ele só é carregado quando `VITE_ENABLE_MOCKS` é `"true"`, em um chunk separado.
 - Visibilidade do painel: `?mockPanel=hidden` (ou `visible`) é gravado em `localStorage` (`kurio.mocks.panel`) e removido da URL antes de o router iniciar. Os testes Playwright abrem o app com `mockPanel=hidden` por padrão (`openApp` em `e2e/support/mocks.ts`), para que o painel não apareça nas capturas de regressão visual; um teste usa `mockPanel: 'visible'` para verificar que o botão não sobrepõe conteúdo.
 - O worker do MSW inicia com `quiet: true`, sem registrar cada requisição no console.
@@ -731,6 +779,7 @@ await window.__mocks.reset()
 window.__mocks.setScenario('payment-declined')
 window.__mocks.setLatency('none')
 window.__mocks.setSessionTtl(5)
+window.__mocks.setSettlement('manual')
 window.__mocks.expireSessions()
 window.__mocks.getSettings()
 window.__mocks.updateNft('emerald-ape-042', { price: '1.29' })
@@ -817,7 +866,7 @@ E-mail e telefone de contato do rodapé são fictícios e aparecem como texto, s
 - O Figma mostra apenas a ordenação "Listados recentemente" (`recent`). As ordenações preço crescente (`price-asc`), preço decrescente (`price-desc`), nome (`name-asc`) e avaliação (`rating-desc`) foram acrescentadas.
 - O Figma desktop mostra só a página 1, com os botões 1 a 4 e "próxima". A paginação mostra a primeira e a última página, a atual e as vizinhas, com reticências, e o botão "anterior" a partir da página 2.
 - Estados sem frame (vazio, erro, página inexistente, atualização em segundo plano, "Limpar filtros", "Esgotado") seguem os tokens do Figma: superfície Surface Card, títulos em Foreground e ações com o botão primário.
-- No mobile os cards mostram o selo de raridade ("Raro", "Lendário") e o coração de favorito no canto superior direito da imagem, como no frame; no desktop o Figma não mostra nenhum dos dois, e lá o favorito fica no detalhe. No mobile, o selo "Esgotado" foi para o canto inferior esquerdo da imagem, porque o canto superior direito é do coração. A grade mobile tem a segunda coluna deslocada para baixo, como no frame.
+- No mobile os cards mostram o selo de raridade ("Raro", "Lendário") e o coração de favorito no canto superior direito da imagem, como no frame; no desktop o Figma não mostra nenhum dos dois, e lá o favorito fica no detalhe. No mobile, o selo "Esgotado" foi para o canto inferior esquerdo da imagem, porque o canto superior direito é do coração. No frame mobile a segunda coluna da grade aparece deslocada para baixo; aqui as duas colunas ficam alinhadas, para que cada fileira tenha os cards lado a lado e a leitura siga a ordem da lista. Os segmentos (Todos os NFTs, Novos lançamentos, Em alta) usam 14 px no mobile para caberem em uma linha a partir de 390 px.
 - Abaixo de 1024 px a barra lateral de filtros vira um drawer, aberto pelo botão de filtros ao lado da busca (mobile, como no Figma) ou pelo botão "Filtros" da barra de ordenação (tablet). O "NFT em destaque" só aparece com a barra lateral (a partir de 1024 px); abaixo disso os destaques ficam no banner.
 - No frame do Figma o texto da segunda chamada ("Arte digital selecionada…") aparece cortado; aqui ele é exibido inteiro.
 - As chamadas "Lançamentos gênesis" e "Arte digital selecionada" levam ao catálogo com `segment=new` e `category=digital-art`. O Diário da Cunhagem é editorial e fora do escopo: o conteúdo é fixo e "Ler mais" segue o padrão "em breve".
@@ -860,6 +909,15 @@ E-mail e telefone de contato do rodapé são fictícios e aparecem como texto, s
 - Itens do resumo: além de "ID do token", aparece a edição, porque o mesmo NFT pode estar em edições diferentes. O desconto mostra a unidade ("(-) 0.00 ETH").
 - Estados sem frame (aviso de mudança da cotação, erros, verificação do pedido, carrinho vazio) seguem os tokens: Coral para erros, Accent para avisos.
 
+### Confirmação de pedido
+
+- O frame desktop mostra o recibo como um cartão sobre fundo escuro, sem header e footer. Aqui o cartão (580 px, faixa inferior laranja, "X" no canto) fica dentro do layout do site, com header e footer, para manter a navegação.
+- Além de "Taxa de rede" e "Total", o recibo mostra "Subtotal" e "Desconto" (com o cupom), exigidos pelo enunciado. A coluna "Edições" mostra a quantidade e a edição comprada.
+- "Ver no Etherscan" virou "Ver no explorador (simulado)" e abre um diálogo, porque o enunciado proíbe levar a um explorador real e pede que a simulação fique clara. O texto "Transação confirmada na Ethereum…" diz "Transação simulada confirmada na …".
+- O ID da transação ganhou um botão de copiar. A faixa usa 14 px nos valores para caber em uma linha no cartão de 580 px.
+- Mobile e tablet (sem frame): o mesmo cartão em largura total; a faixa de informações vira uma grade 2 × 2 e, abaixo de 640 px, quantidade e edição ficam sob o nome do item, com a coluna "Edições" oculta.
+- Os estados pendente, recusado, não encontrado e erro não têm frame e seguem o mesmo cartão e os tokens (Coral para recusa).
+
 ### Login e cadastro
 
 - Os campos não têm rótulo visível no Figma, só placeholders. Cada campo tem um `label` visualmente oculto; os placeholders seguem o Figma.
@@ -880,7 +938,7 @@ E-mail e telefone de contato do rodapé são fictícios e aparecem como texto, s
 
 - Logo KURIO: implementado como texto estilizado (Roboto Mono bold com espaçamento entre letras), não como imagem.
 - Imagens de NFT: convertidas de PNG para WebP com `sharp-cli` 6.1.0 via `npx` (qualidade 80), em duas larguras. `emerald-ape` tem versões de 400 e 800 px. `sage-nomad`, `ivory-baron` e `golden-beat` têm versões de 400 e 500 px, porque o original tem 500 px e não foi ampliado. O tamanho total caiu de 2,4 MB para cerca de 175 KB.
-- SVGs do Google e do Facebook: otimizados com `svgo` 4.1.0 via `npx` e salvos em `src/assets/icons/`.
+- SVGs do Google, do Facebook e o ícone "THANK YOU" da confirmação de pedido: otimizados com `svgo` 4.1.0 via `npx` e salvos em `src/assets/icons/` (o do pedido caiu de 1,9 KB para 1,2 KB). O ícone da confirmação é o original do Figma (`thank-you.svg`), usado como `<img>` com `alt=""`: é decorativo, e o título logo abaixo ("Seus NFTs agora estão na sua carteira") já transmite o resultado.
 - Ícones de redes sociais: não foram fornecidos. Instagram, Twitter e YouTube vêm do Bootstrap Icons 1.13.2 (licença MIT). O ícone do LinkedIn usa apenas o glifo "in" desse pacote, como no Figma. O Facebook reutiliza o glifo do SVG fornecido.
 - Fonte: Roboto Mono servida localmente pelo pacote `@fontsource-variable/roboto-mono` (licença OFL), sem Google Fonts.
 

@@ -1,6 +1,7 @@
 import type { Order, OrderLine } from '@/api/contracts'
 import { publishOrderUpdated } from '../changes'
 import { commit, getDb, type OrderRecord } from '../db'
+import { isManualSettlement } from '../scenarios'
 import { deterministicHex } from '../hex'
 import { removePurchasedItems } from './carts'
 import { findEdition, findNft, updateNftEditions } from './catalog'
@@ -29,6 +30,9 @@ export function clearSettlementTimers(): void {
 export function scheduleSettlement(record: OrderRecord): void {
   const orderId = record.order.id
   clearTimer(orderId)
+  if (isManualSettlement()) {
+    return
+  }
   const wait = Math.max(0, Date.parse(record.settleAt) - Date.now())
   timers.set(
     orderId,
@@ -91,7 +95,7 @@ function confirm(record: OrderRecord, now: string): void {
   order.status = 'confirmed'
   order.transaction = {
     hash,
-    explorerUrl: `${network?.explorerBaseUrl ?? 'https://etherscan.io/tx/'}${hash}`,
+    explorerUrl: `${network?.explorerBaseUrl ?? 'https://explorer.kurio.test/ethereum/tx/'}${hash}`,
     confirmedAt: now,
   }
 }
@@ -123,7 +127,7 @@ export function settleOrder(orderId: string, status?: TerminalStatus): Order {
 }
 
 export function settleIfOverdue(record: OrderRecord): void {
-  if (record.order.status === 'pending' && Date.parse(record.settleAt) <= Date.now()) {
+  if (record.order.status === 'pending' && !isManualSettlement() && Date.parse(record.settleAt) <= Date.now()) {
     settleOrder(record.order.id)
   }
 }

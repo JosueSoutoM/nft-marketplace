@@ -8,10 +8,12 @@ import {
   resetSettings,
   setLatency,
   setScenario,
+  setSettlement,
   setSessionTtl,
   type LatencyMode,
   type MockSettings,
   type ScenarioName,
+  type SettlementMode,
 } from './scenarios'
 import { updateNftEditions } from './services/catalog'
 import {
@@ -23,7 +25,7 @@ import {
   sendStaleRealtimeEvent,
   type RealtimeServerStatus,
 } from './socket/server'
-import { clearSettlementTimers, settleOrder } from './services/orders'
+import { clearSettlementTimers, resumePendingOrders, settleOrder } from './services/orders'
 
 export interface NftUpdate {
   editionId?: string
@@ -37,6 +39,7 @@ export interface MockControls {
   reset: () => Promise<void>
   setScenario: (name: ScenarioName) => void
   setLatency: (mode: LatencyMode) => void
+  setSettlement: (mode: SettlementMode) => void
   setSessionTtl: (seconds: number) => void
   expireSessions: () => void
   getSettings: () => MockSettings
@@ -69,6 +72,12 @@ export function installMockControls(): void {
     reset: resetMocks,
     setScenario,
     setLatency,
+    setSettlement: (mode) => {
+      setSettlement(mode)
+      if (mode === 'auto') {
+        resumePendingOrders()
+      }
+    },
     setSessionTtl,
     expireSessions: expireAllSessions,
     getSettings,

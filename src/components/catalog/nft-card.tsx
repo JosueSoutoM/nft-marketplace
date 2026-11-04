@@ -14,9 +14,9 @@ const RARITY_BADGES: Partial<Record<NftRarity, string>> = {
 const frameClass =
   'relative rounded-[1.25rem] bg-surface-card p-1 pb-5 md:rounded-none md:pt-[1.9375rem] md:pb-[1.1875rem]'
 const imageClass = 'aspect-square w-full rounded-2xl md:rounded-xl'
-const nameClass = 'mt-4 px-3 text-body leading-6 md:mt-5 md:px-0 md:text-body md:leading-[1.375rem]'
+const nameClass = 'mt-4 px-2 text-[0.9375rem] leading-6 md:mt-5 md:px-0 md:text-body md:leading-[1.375rem]'
 const priceClass =
-  'relative flex h-6 items-baseline gap-2 overflow-hidden px-3 text-[1.125rem] leading-6 font-bold whitespace-nowrap md:px-0'
+  'relative flex h-6 items-baseline gap-2 overflow-hidden px-2 text-[1.125rem] leading-6 font-bold whitespace-nowrap md:px-0'
 
 function isSoldOut(nft: NftSummary) {
   return nft.editions.every((edition) => edition.available === 0)

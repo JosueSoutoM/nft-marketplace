@@ -5,15 +5,14 @@ import { Button } from '@/components/ui/button'
 import { NftCard, NftCardSkeleton } from './nft-card'
 
 export const gridClass =
-  'grid grid-cols-2 gap-x-4 gap-y-8 max-md:pb-8 md:grid-cols-3 md:gap-x-6 md:gap-y-12 xl:gap-x-[2.125rem] xl:gap-y-[3.375rem]'
-const staggerClass = 'max-md:even:translate-y-8'
+  'grid grid-cols-2 gap-x-4 gap-y-8 md:grid-cols-3 md:gap-x-6 md:gap-y-12 xl:gap-x-[2.125rem] xl:gap-y-[3.375rem]'
 const FIRST_ROW_SIZE = 3
 
 export function CatalogGrid({ items }: { items: NftSummary[] }) {
   return (
     <ul data-slot="catalog-grid" className={gridClass}>
       {items.map((nft, index) => (
-        <li key={nft.id} className={staggerClass}>
+        <li key={nft.id}>
           <NftCard nft={nft} eager={index < FIRST_ROW_SIZE} />
         </li>
       ))}
@@ -25,7 +24,7 @@ export function CatalogGridSkeleton({ count }: { count: number }) {
   return (
     <div data-slot="catalog-grid" className={gridClass}>
       {Array.from({ length: count }, (_, index) => (
-        <div key={index} className={staggerClass}>
+        <div key={index}>
           <NftCardSkeleton />
         </div>
       ))}
