@@ -53,10 +53,10 @@ export function isTerminalOrder(order: Order | undefined): boolean {
   return !!order && TERMINAL_STATUSES.includes(order.status)
 }
 
-function isNftRelevant(queryClient: QueryClient, nftId: string, userId: string | null): boolean {
+function shouldAnnounceNftChange(queryClient: QueryClient, nftId: string, userId: string | null): boolean {
   const inCart = queryClient.getQueryData<Cart>(queryKeys.cart(userId))?.items.some((item) => item.nftId === nftId) ?? false
   const detailObserved = (queryClient.getQueryCache().find({ queryKey: queryKeys.nfts.detail(nftId) })?.getObserversCount() ?? 0) > 0
-  return inCart || detailObserved
+  return inCart && !detailObserved
 }
 
 function announceNftChange(previous: NftSummary | undefined, event: NftUpdatedEvent): void {
@@ -79,7 +79,7 @@ function announceNftChange(previous: NftSummary | undefined, event: NftUpdatedEv
 export function applyNftUpdated(queryClient: QueryClient, event: NftUpdatedEvent, userId: string | null): void {
   const nftId = event.resource.id
   const previous = cachedNftSummaries(queryClient, nftId, userId)[0]
-  const relevant = isNftRelevant(queryClient, nftId, userId)
+  const relevant = shouldAnnounceNftChange(queryClient, nftId, userId)
 
   queryClient.setQueryData<Nft>(queryKeys.nfts.detail(nftId), (nft) => nft && patchNft(nft, event))
   queryClient.setQueriesData<NftListResponse>({ queryKey: queryKeys.nfts.lists() }, (data) =>

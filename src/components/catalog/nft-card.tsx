@@ -14,7 +14,8 @@ const frameClass =
   'relative rounded-[1.25rem] bg-surface-card p-1 pb-5 md:rounded-none md:pt-[1.9375rem] md:pb-[1.1875rem]'
 const imageClass = 'aspect-square w-full rounded-2xl md:rounded-xl'
 const nameClass = 'mt-4 px-3 text-body leading-6 md:mt-5 md:px-0 md:text-body md:leading-[1.375rem]'
-const priceClass = 'px-3 text-[1.125rem] leading-6 font-bold md:px-0'
+const priceClass =
+  'relative flex h-6 items-baseline gap-2 overflow-hidden px-3 text-[1.125rem] leading-6 font-bold whitespace-nowrap md:px-0'
 
 function isSoldOut(nft: NftSummary) {
   return nft.editions.every((edition) => edition.available === 0)
@@ -56,11 +57,13 @@ export function NftCard({ nft, eager = false }: NftCardProps) {
         </div>
         <h3 className={cn(nameClass, 'truncate text-foreground group-hover:text-text-accent')}>{nft.name}</h3>
         <p className={priceClass}>
-          <span className="text-text-accent">{formatEth(nft.price)}</span>
+          <span className="shrink-0 text-text-accent">{formatEth(nft.price)}</span>
           {nft.compareAtPrice && (
             <>
-              <span className="sr-only">, preço anterior </span>
-              <span className="ml-2 font-normal text-secondary">{formatEth(nft.compareAtPrice)}</span>
+              <span className="sr-only">, preço anterior {formatEth(nft.compareAtPrice)}</span>
+              <s aria-hidden="true" className="min-w-0 truncate font-normal text-secondary max-md:hidden">
+                {formatEth(nft.compareAtPrice)}
+              </s>
             </>
           )}
         </p>

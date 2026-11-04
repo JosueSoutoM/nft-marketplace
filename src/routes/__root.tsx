@@ -22,9 +22,13 @@ function RootLayout() {
   const hideMobileTabBar = useMatches({
     select: (matches) => matches.some((match) => match.staticData.hideMobileTabBar),
   })
+  const mobileActionBar = useMatches({
+    select: (matches) => matches.some((match) => match.staticData.mobileActionBar),
+  })
+  const reserveMobileBar = !hideMobileTabBar || mobileActionBar
 
   return (
-    <div className={cn('flex min-h-dvh flex-col', !hideMobileTabBar && 'pb-28 md:pb-0')}>
+    <div className={cn('flex min-h-dvh flex-col', reserveMobileBar && 'pb-28 md:pb-0')}>
       <SkipLink />
       <SiteHeader />
       <main id={MAIN_CONTENT_ID} tabIndex={-1} className="flex-1 outline-none">
@@ -33,7 +37,7 @@ function RootLayout() {
       <SiteFooter />
       {!hideMobileTabBar && <MobileTabBar />}
       <LiveAnnouncer />
-      <Toaster position="bottom-right" mobileOffset={{ bottom: hideMobileTabBar ? 16 : 120 }} />
+      <Toaster position="bottom-right" mobileOffset={{ bottom: reserveMobileBar ? 120 : 16 }} />
     </div>
   )
 }

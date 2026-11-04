@@ -13,6 +13,14 @@ const MockPanel = mocksEnabled
   ? lazy(() => import('@/mocks/panel/mock-panel').then((module) => ({ default: module.MockPanel })))
   : null
 
+const FONT_WAIT_MS = 1500
+
+function waitForFont() {
+  const timeout = new Promise<void>((resolve) => setTimeout(resolve, FONT_WAIT_MS))
+  const font = document.fonts.load('1rem "Roboto Mono Variable"').then(() => undefined)
+  return Promise.race([font, timeout]).catch(() => undefined)
+}
+
 async function enableMocks() {
   if (!mocksEnabled) {
     return
@@ -21,7 +29,7 @@ async function enableMocks() {
   await startMocks()
 }
 
-enableMocks().then(() => {
+Promise.all([enableMocks(), waitForFont()]).then(() => {
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
       <QueryClientProvider client={queryClient}>

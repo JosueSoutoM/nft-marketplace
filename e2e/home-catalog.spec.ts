@@ -198,16 +198,20 @@ test('shows skeletons while the catalog loads slowly without layout shift', asyn
 
   const grid = page.locator('[data-slot="catalog-grid"]')
   const skeletons = grid.locator('[data-slot="skeleton"]')
+  const cellBoxes = () =>
+    grid.evaluate((element) =>
+      [...element.children].map((cell) => {
+        const box = cell.getBoundingClientRect()
+        return [box.x, box.y + window.scrollY, box.width, box.height].map(Math.round)
+      }),
+    )
   await expect(skeletons.first()).toBeVisible()
-  const skeletonCell = await grid.locator(':scope > *').first().boundingBox()
+  const skeletonCells = await cellBoxes()
 
   await expect(cardNames(page)).toHaveText(FIRST_PAGE, { timeout: 10_000 })
   await expect(skeletons).toHaveCount(0)
-  const cardCell = await grid.locator(':scope > *').first().boundingBox()
-  expect(skeletonCell).not.toBeNull()
-  expect(Math.round(cardCell?.y ?? 0)).toBe(Math.round(skeletonCell?.y ?? -1))
-  expect(Math.round(cardCell?.width ?? 0)).toBe(Math.round(skeletonCell?.width ?? -1))
-  expect(Math.round(cardCell?.height ?? 0)).toBe(Math.round(skeletonCell?.height ?? -1))
+  expect(skeletonCells).toHaveLength(FIRST_PAGE.length)
+  expect(await cellBoxes()).toEqual(skeletonCells)
 })
 
 test('keeps the latest parameters when responses arrive out of order', async ({ page, isMobile }) => {

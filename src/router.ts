@@ -20,5 +20,6 @@ declare module '@tanstack/react-router' {
 
   interface StaticDataRouteOption {
     hideMobileTabBar?: boolean
+    mobileActionBar?: boolean
   }
 }

@@ -51,7 +51,9 @@ src/
 
 - As rotas privadas ficam sob o layout `_authenticated`, que não altera a URL. A proteção será implementada nesse layout.
 - `/` guarda o estado do catálogo na URL (ver "Estado do catálogo na URL").
+- `/nfts/$nftId` aceita o search param `edition` (ver "Detalhe do NFT").
 - `/login` aceita o search param `redirect`. Apenas caminhos internos são aceitos (iniciados por `/` e não por `//`); qualquer outro valor é descartado. O botão "Entrar" do header envia a URL atual como `redirect`.
+- `staticData.mobileActionBar` indica que a tela tem barra de ação fixa no mobile (detalhe): o layout raiz reserva o espaço inferior e afasta as notificações dessa barra.
 - `staticData.hideMobileTabBar` oculta a barra inferior no mobile nas telas que, no Figma, têm barra de ação própria ou ocupam a tela inteira: detalhes, carrinho, pagamento, login e cadastro.
 - O acesso direto e o refresh funcionam em qualquer rota: no desenvolvimento e no preview pelo fallback de SPA do Vite, e na Vercel pelo rewrite de `vercel.json`.
 
@@ -304,6 +306,22 @@ A rota `/` valida os search params em `src/lib/catalog-search.ts` (`validateCata
 - Busca: o campo atualiza a URL 350 ms depois da última tecla. A primeira atualização de uma sessão de digitação (desde o foco) cria uma entrada no histórico e as seguintes a substituem (`replace`), então digitar uma palavra produz uma única entrada. Enter aplica na hora e rola até o catálogo. Fora da tela inicial (busca do header), só o Enter navega, para `/?q=…#catalogo`.
 - No desktop e no tablet a busca fica no ícone do header (popover); no mobile, no campo "Explorar coleções" do topo da tela, como no Figma. A busca ativa aparece acima da grade ("Resultados para …") com a ação "Limpar busca".
 
+## Detalhe do NFT
+
+Rota `/nfts/$nftId` (`src/routes/nfts.$nftId.tsx`), componentes em `src/components/nft-detail/` e regras de edição e quantidade em `src/lib/nft-edition.ts`.
+
+| Parâmetro | Valores | Padrão | Valor inválido |
+| --- | --- | --- | --- |
+| `edition` | id de uma edição do NFT (`unique`, `limited-10`, `limited-50`, `open`) | ausente | formato inválido é descartado; id que não existe no NFT cai no padrão |
+
+- Sem `edition`, a tela usa a edição padrão da API (`defaultEditionId`) ou, se ela estiver esgotada, a primeira edição disponível. A edição resolvida na abertura fica fixa durante a visita: se esgotar em tempo real, continua selecionada e mostra o motivo, em vez de trocar sozinha.
+- Escolher uma edição grava `edition` na URL com `replace` (sem nova entrada no histórico), e a escolha sobrevive ao refresh. Uma edição pedida pela URL é respeitada mesmo esgotada, com o estado de indisponível.
+- Quantidade: inteiro de 1 até `min(available, maxPerOrder)` da edição. O motivo do limite aparece abaixo do controle e é anunciado: "Só restam N unidades da edição X." quando o estoque é o limite, "Limite de N unidades por pedido na edição X." quando é o teto por pedido e "A edição X está esgotada." quando não há estoque. A quantidade é estado local da tela (não vai para a URL) e é ajustada ao novo limite quando a edição muda.
+- Dados: `useNftDetail(id)` (`src/hooks/use-nft-detail.ts`) usa a chave `['nfts', 'detail', id]`, `staleTime` de 30 s e o `signal` do Query no Axios. O `loader` da rota chama `prefetchQuery` sem `await`: com `defaultPreload: 'intent'`, passar o mouse ou focar o card do catálogo já busca o detalhe. No acesso direto, o loader dispara a mesma consulta e a tela mostra o skeleton até a resposta.
+- Estados: um 404 da API mostra "NFT não encontrado" com o link "Voltar ao catálogo" (`/#catalogo`). Rede, timeout ou 5xx (depois das novas tentativas padrão) mostram `role="alert"` com a mensagem da API e "Tentar novamente".
+- "Mais desta coleção": `GET /api/nfts?collection=<id>&sort=recent&pageSize=16`, na família `['nfts', 'list', …]` (por isso recebe `nft.updated`), sem o NFT aberto. Tem estados próprios de carregamento, erro com nova tentativa e vazio.
+- Tempo real: o `nft.updated` atualiza `['nfts', 'detail', id]` pelo cache (ver "Reconciliação REST × Socket.IO"). A tela compara a edição selecionada antes e depois de cada nova versão e anuncia, numa única mensagem, a mudança de preço ("O preço de Emerald Ape #042 na edição 1/50 mudou de 1.19 ETH para 1.31 ETH."), a de disponibilidade e o ajuste da quantidade quando ela passa do novo limite. A troca de edição feita pelo próprio usuário não é anunciada como alteração.
+
 ## Estratégia de cache, retries e sincronização
 
 ### Padrões globais (`src/lib/query-client.ts`)
@@ -355,7 +373,7 @@ As chaves vêm de `src/lib/query-keys.ts`. Dados privados ficam sob `['user', us
 ### Estado e feedback
 
 - `useRealtimeStatus()` devolve `idle`, `connecting`, `connected`, `reconnecting` ou `disconnected`.
-- `announce(message)` (`src/lib/announcer.ts`) publica mensagens numa região `aria-live="polite"` única (`LiveAnnouncer`, no layout raiz). O tempo real anuncia mudança de preço ou esgotamento de NFTs que estão no carrinho ou com o detalhe aberto ("O preço de Emerald Ape #042 mudou para 1.31 ETH.") e a confirmação ou recusa do pagamento.
+- `announce(message)` (`src/lib/announcer.ts`) publica mensagens numa região `aria-live="polite"` única (`LiveAnnouncer`, no layout raiz). A camada de tempo real anuncia mudança de preço ou esgotamento de NFTs que estão no carrinho ("O preço de Emerald Ape #042 mudou para 1.31 ETH.") e a confirmação ou recusa do pagamento. Com o detalhe do NFT aberto, o anúncio fica com a tela de detalhe, que conhece a edição selecionada; assim a mesma mudança não é anunciada duas vezes.
 
 ## Mocks e cenários
 
@@ -522,7 +540,17 @@ window.__mocks.getRealtimeStatus()
 - Quando a busca, os filtros, a ordenação ou a página mudam, a quantidade de resultados é anunciada pela região `aria-live` global ("2 NFTs encontrados.", com a página quando há mais de uma). A carga inicial não é anunciada.
 - Erro do catálogo: `role="alert"` com a mensagem da API e o botão "Tentar novamente".
 - Drawer de filtros (abaixo de 1024 px): `Dialog` do Radix (Sheet do shadcn/ui), com foco preso, Esc para fechar e retorno do foco ao botão que o abriu.
-- Skeletons têm `aria-hidden` e as mesmas dimensões dos cards (verificado no teste de carregamento lento). Com `prefers-reduced-motion`, o brilho é removido e o skeleton fica estático.
+- Skeletons têm `aria-hidden` e as mesmas dimensões dos cards. O teste de carregamento lento compara posição e tamanho de todas as células da grade, antes e depois dos dados. Com `prefers-reduced-motion`, o brilho é removido e o skeleton fica estático.
+
+### Detalhe do NFT
+
+- O título do NFT é o `h1`. "Sobre este NFT", "Mais desta coleção" e as abas formam a estrutura da página. A trilha "Início / Mercado" é um `nav` com lista.
+- Galeria: as miniaturas são botões "Mostrar imagem N de 4" com `aria-pressed`. A selecionada tem um anel afastado da borda (mudança de forma, não só de cor), e as demais ficam com opacidade reduzida. A imagem principal usa o texto alternativo da API para a posição escolhida. As miniaturas têm `alt=""`, porque o nome já está no botão. "Ampliar imagem" abre um `Dialog` do shadcn/ui, com foco preso, Esc para fechar e retorno do foco.
+- Edição: `fieldset` com a legenda "Edição:" e rádios nativos (as setas trocam a opção). A edição selecionada tem borda e texto em destaque e também peso bold. As esgotadas ficam `disabled`, riscadas e com ", esgotada" no nome acessível. O motivo ("Esgotadas: 1/1, 1/10.") fica visível e ligado aos rádios por `aria-describedby`.
+- Quantidade: campo "Quantidade" (só dígitos, `inputMode="numeric"`) entre "Diminuir quantidade" e "Aumentar quantidade". Nos limites, os botões ficam com `aria-disabled` e continuam focáveis, para o foco não se perder; acioná-los anuncia o motivo. A mensagem de limite é a descrição do campo.
+- Abas: `Tabs` do shadcn/ui (Radix), com navegação pelas setas. No mobile, a segunda aba se chama "Avaliações (19)".
+- "Mais desta coleção": lista com rolagem horizontal e snap. Os pontos são botões "Página N de M" com `aria-current`. Com `prefers-reduced-motion`, a rolagem pelos pontos é instantânea.
+- O skeleton tem `aria-hidden` e usa as mesmas classes de layout da tela final, mais um `output` "Carregando NFT…" para leitores de tela.
 
 ## Desvios do Figma e decisões de UX
 
@@ -530,6 +558,7 @@ window.__mocks.getRealtimeStatus()
 
 - O título do banner usa 43/70 a partir de 768 px e 19/29 abaixo disso, como no frame mobile. Com 43 px em 390 px, o título quebraria em muitas linhas.
 - Onde o Figma define line-height "auto", foi usado `normal`.
+- Carregamento da fonte: o `index.html` faz `preload` do arquivo latino da Roboto Mono (o Vite troca o caminho pelo mesmo arquivo com hash que o CSS usa, sem download duplicado), e o `main.tsx` só faz o primeiro render depois de `document.fonts.load`, em paralelo com a inicialização dos mocks e com limite de 1,5 s. Sem isso, o primeiro render usava a fonte de fallback, o título do hero ocupava uma linha a menos e, quando a Roboto Mono chegava (`font-display: swap`), o hero crescia 47 px no mobile e 24 px no tablet, empurrando o catálogo. Se a fonte passar do limite, a página renderiza com o fallback e a troca acontece depois.
 - A descrição do banner usa 14/24 (`text-body-sm`), conforme o Figma.
 - Tamanhos e raios foram medidos nas imagens exportadas, com margem de cerca de 1 px. O único valor confirmado diretamente no Figma é o título do banner (43/70).
 
@@ -565,7 +594,22 @@ E-mail e telefone de contato do rodapé são fictícios e aparecem como texto, s
 - No frame do Figma o texto da segunda chamada ("Arte digital selecionada…") aparece cortado; aqui ele é exibido inteiro.
 - As chamadas "Lançamentos gênesis" e "Arte digital selecionada" levam ao catálogo com `segment=new` e `category=digital-art`. O Diário da Cunhagem é editorial e fora do escopo: o conteúdo é fixo e "Ler mais" segue o padrão "em breve".
 - No mobile o banner mostra uma miniatura do próximo destaque sobre a imagem principal, como no frame. Os pontos do carrossel são botões que trocam o destaque; não há troca automática.
+- A linha de preço do card tem altura fixa de uma linha (`h-6`, sem quebra), igual à do skeleton. Abaixo de 768 px o preço anterior riscado não aparece, como no frame mobile: nos cards de 2 colunas ele não cabe ao lado do preço e quebrava a linha, deixando a fileira 24 px mais alta que a do skeleton. O valor continua no texto para leitores de tela ("preço anterior 2.29 ETH") e aparece a partir de 768 px e no detalhe do NFT.
 - O preço exibido no card é o da edição `1/50`, que é a edição padrão. Os preços das demais edições derivam dele: `1/1` = 5×, `1/10` = 2× e `Aberta` = 50%. A edição `Aberta` tem estoque inteiro de 1000 unidades.
+
+### Detalhe do NFT
+
+- Favoritar e Comprar (desktop), o coração (mobile) e os botões "Comprar NFT" e carrinho da barra mobile ainda não aparecem. Eles serão ligados à API nas tarefas de favoritos e carrinho, e nenhum botão ficou sem função.
+- Foram acrescentadas as linhas "Criador: …" e "Disponível: N de M na edição X", que não estão no Figma: o enunciado pede o criador, e a disponibilidade explica o limite de quantidade e reflete o `nft.updated`.
+- O preço exibido é o da edição selecionada. O Figma mostra o da `1/50`, que é a edição padrão. Quando há preço anterior, ele aparece riscado ao lado.
+- No Figma, os rótulos "Contrato:" e "Direitos autorais:" aparecem trocados em relação ao conteúdo. Aqui "Contrato:" mostra o endereço abreviado e o padrão (`0x7A42...19E8 · Contrato inteligente ERC-721 verificado.`), e "Direitos autorais:" mostra o percentual do criador. O endereço completo fica no atributo `title`.
+- A nota do mobile ("★ 4.8(19)") usa a média da API, com uma casa decimal. Nos dados, o Emerald Ape tem média 5.0.
+- O conteúdo da aba "Avaliações" não tem frame. Ele lista autor, nota, data e comentário das avaliações retornadas pela API (até 3), com a nota "Mostrando as 3 avaliações mais recentes de 19."
+- Mobile: o frame mostra só a primeira tela, sem miniaturas, compartilhamento, abas e "Mais desta coleção". Miniaturas e compartilhamento aparecem a partir de 768 px; abas e "Mais desta coleção" ficam abaixo das informações. A barra inferior mostra "Qtd." e o preço. Os botões de passo têm 28×40 px (20×28 no frame), para respeitar a área mínima de toque.
+- Tablet (sem frame): a galeria (miniaturas e imagem) fica centralizada no topo, e as informações ocupam a largura total abaixo dela. As três colunas do desktop começam em 1024 px.
+- "Mais desta coleção" mostra 5 cards por página no desktop, 3 no tablet e 2 no mobile, com os pontos calculados pela largura. Os itens vêm da coleção do NFT (`collection`), por isso diferem dos do Figma.
+- Os ícones de compartilhamento são links reais: LinkedIn e Twitter abrem em nova aba, e o e-mail usa `mailto:`, sempre com o endereço da página.
+- A lupa sobre a imagem (Figma) amplia a imagem num diálogo.
 
 ### Substituição de assets
 
