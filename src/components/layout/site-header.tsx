@@ -81,7 +81,7 @@ export function SiteHeader() {
                 hash={CATALOG_HASH}
                 activeOptions={{ exact: true, includeHash: true }}
                 aria-current={section === 'market' ? 'page' : undefined}
-                className={cn(navItemClass, section === 'market' && activeNavItemClass)}
+                className={cn(navItemClass, (section === 'market' || section === 'favorites') && activeNavItemClass)}
               >
                 Mercado
               </Link>

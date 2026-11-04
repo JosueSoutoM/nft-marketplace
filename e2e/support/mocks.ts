@@ -11,11 +11,13 @@ export type Scenario =
   | 'session-expired'
   | 'register-conflict'
   | 'form-validation'
+  | 'favorite-failure'
 
 export type Latency = 'none' | 'fixed' | 'slow' | 'variable'
 
 interface MockControls {
   setScenario: (name: Scenario) => void
+  setLatency: (mode: Latency) => void
   expireSessions: () => void
   updateNft: (nftId: string, update: { editionId?: string; price?: string; available?: number }) => unknown
   getRealtimeStatus: () => { connections: Array<{ id: string; userId: string | null }> }
@@ -44,6 +46,10 @@ export async function openApp(page: Page, path = '/', { scenario = 'success', la
 
 export async function setScenario(page: Page, scenario: Scenario) {
   await page.evaluate((name) => window.__mocks?.setScenario(name), scenario)
+}
+
+export async function setLatency(page: Page, latency: Latency) {
+  await page.evaluate((mode) => window.__mocks?.setLatency(mode), latency)
 }
 
 export function searchParam(page: Page, name: string): string | null {

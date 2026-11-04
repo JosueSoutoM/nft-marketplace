@@ -116,6 +116,7 @@ export interface NftListQuery {
   maxPrice?: EthAmount
   segment?: NftSegment
   featured?: boolean
+  favorites?: boolean
   sort?: NftSort
   page?: number
   pageSize?: number

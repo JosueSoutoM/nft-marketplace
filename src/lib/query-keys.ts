@@ -18,7 +18,12 @@ export const queryKeys = {
   },
   user: (userId: string) => ['user', userId] as const,
   guest: () => ['guest'] as const,
-  favorites: (userId: string) => ['user', userId, 'favorites'] as const,
+  favorites: {
+    all: (userId: string) => ['user', userId, 'favorites'] as const,
+    index: (userId: string) => ['user', userId, 'favorites', 'index'] as const,
+    lists: (userId: string) => ['user', userId, 'favorites', 'list'] as const,
+    list: (userId: string, params: NftListQuery) => ['user', userId, 'favorites', 'list', params] as const,
+  },
   profile: (userId: string) => ['user', userId, 'profile'] as const,
   wallets: (userId: string) => ['user', userId, 'wallets'] as const,
   orders: {

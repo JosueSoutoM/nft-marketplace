@@ -3,6 +3,7 @@ import { createFileRoute, Link } from '@tanstack/react-router'
 import type { Nft } from '@/api/contracts'
 import { isApiError } from '@/api/errors'
 import { BackButton } from '@/components/layout/back-button'
+import { FavoriteButton } from '@/components/favorites/favorite-button'
 import { Container } from '@/components/layout/container'
 import { CATALOG_HASH } from '@/components/layout/use-active-section'
 import { CollectionCarousel } from '@/components/nft-detail/collection-carousel'
@@ -67,7 +68,10 @@ function NftDetailView({ nft }: { nft: Nft }) {
   return (
     <>
       <Container className={pageClass}>
-        <BackButton className="md:hidden" />
+        <div className="flex items-center justify-between md:hidden">
+          <BackButton />
+          <FavoriteButton nft={nft} variant="icon" />
+        </div>
         <nav aria-label="Trilha de navegação" className={breadcrumbClass}>
           <ol className="flex items-center gap-2">
             <li>

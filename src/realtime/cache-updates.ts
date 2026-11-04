@@ -34,11 +34,16 @@ function cachedNftSummaries(queryClient: QueryClient, nftId: string, userId: str
     .getQueriesData<NftListResponse>({ queryKey: queryKeys.nfts.lists() })
     .flatMap(([, data]) => data?.items.filter((item) => item.id === nftId) ?? [])
   const fromFavorites = userId
-    ? (queryClient.getQueryData<FavoriteListResponse>(queryKeys.favorites(userId))?.items ?? [])
+    ? (queryClient.getQueryData<FavoriteListResponse>(queryKeys.favorites.index(userId))?.items ?? [])
         .filter((favorite) => favorite.nftId === nftId)
         .map((favorite) => favorite.nft)
     : []
-  return [...(detail ? [detail] : []), ...fromLists, ...fromFavorites]
+  const fromFavoriteLists = userId
+    ? queryClient
+        .getQueriesData<NftListResponse>({ queryKey: queryKeys.favorites.lists(userId) })
+        .flatMap(([, data]) => data?.items.filter((item) => item.id === nftId) ?? [])
+    : []
+  return [...(detail ? [detail] : []), ...fromLists, ...fromFavorites, ...fromFavoriteLists]
 }
 
 export function cachedNftVersion(queryClient: QueryClient, nftId: string, userId: string | null): number {
@@ -82,11 +87,12 @@ export function applyNftUpdated(queryClient: QueryClient, event: NftUpdatedEvent
   const relevant = shouldAnnounceNftChange(queryClient, nftId, userId)
 
   queryClient.setQueryData<Nft>(queryKeys.nfts.detail(nftId), (nft) => nft && patchNft(nft, event))
-  queryClient.setQueriesData<NftListResponse>({ queryKey: queryKeys.nfts.lists() }, (data) =>
-    data && { ...data, items: data.items.map((item) => patchNft(item, event)) },
-  )
+  const patchList = (data: NftListResponse | undefined) =>
+    data && { ...data, items: data.items.map((item) => patchNft(item, event)) }
+  queryClient.setQueriesData<NftListResponse>({ queryKey: queryKeys.nfts.lists() }, patchList)
   if (userId) {
-    queryClient.setQueryData<FavoriteListResponse>(queryKeys.favorites(userId), (data) =>
+    queryClient.setQueriesData<NftListResponse>({ queryKey: queryKeys.favorites.lists(userId) }, patchList)
+    queryClient.setQueryData<FavoriteListResponse>(queryKeys.favorites.index(userId), (data) =>
       data && { items: data.items.map((favorite) => ({ ...favorite, nft: patchNft(favorite.nft, event) })) },
     )
   }
@@ -119,7 +125,7 @@ export function reconcileActiveQueries(queryClient: QueryClient, userId: string 
     queryKeys.nfts.all(),
     queryKeys.cart(userId),
     queryKeys.quotes.all(userId),
-    ...(userId ? [queryKeys.orders.all(userId)] : []),
+    ...(userId ? [queryKeys.orders.all(userId), queryKeys.favorites.all(userId)] : []),
   ]
   keys.forEach((queryKey) => void queryClient.invalidateQueries({ queryKey, refetchType: 'active' }))
 }

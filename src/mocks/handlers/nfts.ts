@@ -23,6 +23,7 @@ import { errorResponse, jsonResponse } from '../responses'
 import { isScenario } from '../scenarios'
 import { toNftSummary } from './mappers'
 import { apiRoute } from './route'
+import { authenticate } from './session-guard'
 
 interface ParsedQuery {
   q: string
@@ -33,6 +34,7 @@ interface ParsedQuery {
   maxPrice: string | null
   segment: NftSegment
   featured: boolean | null
+  favorites: boolean
   sort: NftSort
   page: number
   pageSize: number
@@ -102,6 +104,11 @@ function parseQuery(url: URL): { query: ParsedQuery } | { errors: FieldErrors } 
     errors.featured = 'Use true ou false.'
   }
 
+  const favorites = params.get('favorites')
+  if (favorites !== null && favorites !== 'true' && favorites !== 'false') {
+    errors.favorites = 'Use true ou false.'
+  }
+
   const sort = params.get('sort') ?? 'recent'
   if (!includes(NFT_SORTS, sort)) {
     errors.sort = 'Ordenação desconhecida.'
@@ -131,6 +138,7 @@ function parseQuery(url: URL): { query: ParsedQuery } | { errors: FieldErrors } 
       maxPrice: maxPrice === null ? null : normalizeEth(maxPrice),
       segment: segment as NftSegment,
       featured: featured === null ? null : featured === 'true',
+      favorites: favorites === 'true',
       sort: sort as NftSort,
       page: page as number,
       pageSize: pageSize as number,
@@ -204,13 +212,26 @@ function catalog(): Nft[] {
   return isScenario('empty-catalog') ? [] : getDb().nfts
 }
 
-const list = apiRoute('nfts.list', ({ request }) => {
+async function listSource(request: Request, query: ParsedQuery): Promise<Nft[]> {
+  if (!query.favorites) {
+    return catalog()
+  }
+  const { user } = await authenticate(request)
+  const favoriteIds = new Set(
+    getDb()
+      .favorites.filter((record) => record.userId === user.id)
+      .map((record) => record.nftId),
+  )
+  return catalog().filter((nft) => favoriteIds.has(nft.id))
+}
+
+const list = apiRoute('nfts.list', async ({ request }) => {
   const parsed = parseQuery(new URL(request.url))
   if ('errors' in parsed) {
     return errorResponse(400, 'BAD_REQUEST', 'Parâmetros de consulta inválidos.', parsed.errors)
   }
   const { query } = parsed
-  const nfts = catalog()
+  const nfts = await listSource(request, query)
   const filtered = nfts.filter((nft) => matches(nft, query)).sort(compareNfts(query.sort))
   const start = (query.page - 1) * query.pageSize
   const body: NftListResponse = {

@@ -40,7 +40,10 @@ export function NftDetailSkeleton() {
       <Container className={pageClass} aria-busy="true">
         <output className="sr-only">Carregando NFT…</output>
         <div aria-hidden="true">
-          <Skeleton className="size-10 rounded-full md:hidden" />
+          <div className="flex items-center justify-between md:hidden">
+            <Skeleton className="size-10 rounded-full" />
+            <Skeleton className="size-10 rounded-full" />
+          </div>
           <div className={breadcrumbClass}>
             <Skeleton className="h-3.5 w-32" />
           </div>
@@ -81,6 +84,7 @@ export function NftDetailSkeleton() {
                 <Skeleton className="h-12 w-8 rounded-full" />
                 <Skeleton className="h-6 w-10" />
                 <Skeleton className="h-12 w-8 rounded-full" />
+                <Skeleton className="ml-auto h-9 w-28" />
               </div>
               <div className="mt-3 md:mt-4">
                 {Array.from({ length: INFO_LINES }, (_, index) => (

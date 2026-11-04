@@ -17,6 +17,7 @@ src/
   assets/icons/           SVGs otimizados (Google e Facebook)
   components/
     catalog/              catálogo: busca, filtros, segmentos, ordenação, grade, estados e paginação
+    favorites/            botão de favorito (card, detalhe desktop e detalhe mobile)
     home/                 seções da tela inicial: banner, NFT em destaque, chamadas e Diário da Cunhagem
     icons/                ícones de redes sociais em SVG inline
     layout/               header (com busca), footer, barra inferior mobile, 404 e utilitários de layout
@@ -38,7 +39,7 @@ src/
 
 | Caminho | Arquivo | Tela | Acesso |
 | --- | --- | --- | --- |
-| `/` | `routes/index.tsx` | Início | Público |
+| `/` | `routes/index.tsx` | Início (com `favorites=true`, lista de favoritos) | Público; privado com `favorites=true` |
 | `/nfts/$nftId` | `routes/nfts.$nftId.tsx` | Detalhes do NFT | Público |
 | `/cart` | `routes/cart.tsx` | Carrinho | Público |
 | `/login` | `routes/_auth/login.tsx` | Login (diálogo sobre o início a partir de 768 px) | Público |
@@ -112,7 +113,7 @@ Todos os endpoints estão implementados. A coluna "Sessão" indica se o endpoint
 | `POST /api/auth/login` | Não | `LoginRequest` | `200 AuthResponse`; 401 `INVALID_CREDENTIALS`; 422 |
 | `GET /api/auth/session` | Sim | — | `200 Session`; 401 `UNAUTHENTICATED`/`SESSION_EXPIRED` |
 | `POST /api/auth/logout` | Não | — | `204` (idempotente; invalida o token enviado e desconecta as carteiras do usuário) |
-| `GET /api/nfts` | Não | `NftListQuery` | `200 NftListResponse`; 400 |
+| `GET /api/nfts` | Não (sim com `favorites=true`) | `NftListQuery` | `200 NftListResponse`; 400; 401 com `favorites=true` sem sessão |
 | `GET /api/nfts/:nftId` | Não | — | `200 Nft`; 404 |
 | `GET /api/networks` | Não | — | `200 NetworkListResponse` (rede, taxa estimada, base do explorador) |
 | `GET /api/favorites` | Sim | — | `200 FavoriteListResponse` (mais recentes primeiro) |
@@ -150,6 +151,7 @@ Todos os endpoints estão implementados. A coluna "Sessão" indica se o endpoint
 | `segment` | `all`, `new` (novos lançamentos), `trending` (em alta) | `all` |
 | `collection` | identificador da coleção (para "Mais desta coleção") | — |
 | `featured` | `true` ou `false` (destaques do banner e "NFT em destaque") | — |
+| `favorites` | `true` restringe a lista aos favoritos do usuário do token (exige sessão; sem token responde 401); facetas e faixa de preço passam a considerar só os favoritos | `false` |
 | `sort` | `recent` (listados recentemente), `price-asc`, `price-desc`, `name-asc`, `rating-desc` | `recent` |
 | `page`, `pageSize` | inteiros; `pageSize` entre 1 e 48 | `1`, `9` |
 
@@ -237,7 +239,7 @@ pending ──(liquidação)──▶ confirmed   (terminal)
 
 | Evento | Destinatários | `data` | Efeito no cliente |
 | --- | --- | --- | --- |
-| `nft.updated` | Todas as conexões, inclusive visitantes | `editions`, `price`, `compareAtPrice` | Atualiza o detalhe, os itens das listas e os favoritos em cache; invalida carrinho e cotação |
+| `nft.updated` | Todas as conexões, inclusive visitantes | `editions`, `price`, `compareAtPrice` | Atualiza o detalhe, os itens das listas, o índice e as listas de favoritos em cache; invalida carrinho e cotação |
 | `order.updated` | Somente a conexão autenticada como dona do pedido | `Order` completo | Atualiza o pedido em cache; invalida as listas de pedidos; na confirmação, invalida carrinho e cotação |
 
 Os dois eventos têm o mesmo envelope (`src/api/contracts/events.ts`):
@@ -323,6 +325,45 @@ O payload trafega como objeto JSON no pacote de evento do Socket.IO (`42["nft.up
 
 Validação dos dois formulários, conflito de e-mail no cadastro, credenciais inválidas, cadastro com redirect, login com retorno ao redirect (com search) e sessão após refresh, redirect externo descartado, rota privada sem login, Esc no diálogo com retorno do foco (desktop), expiração pelo painel durante a navegação com retomada, logout e troca ana → bruno sem vazamento (menu, textos, conexões do socket e header `Authorization` de todas as requisições) e merge do carrinho com ajuste.
 
+## Favoritos
+
+### Dados e chaves
+
+- `useFavoriteIds` (`src/hooks/use-favorites.ts`) consulta `GET /api/favorites` na chave `['user', userId, 'favorites', 'index']`, com `staleTime` de 30 s, e entrega o conjunto de ids favoritados. É a fonte do estado de todos os botões de favorito.
+- A lista `/?favorites=true` usa `useCatalogList` (`src/hooks/use-nft-list.ts`) com a chave `['user', userId, 'favorites', 'list', params]` e chama `GET /api/nfts?favorites=true&…` com os mesmos parâmetros do catálogo. A chave privada impede que o cache público de `['nfts', 'list', …]` dependa do usuário. O `placeholderData` só reaproveita a lista anterior se ela for do mesmo dono (catálogo público ou o mesmo usuário); trocar de usuário ou passar do catálogo público para os favoritos mostra o skeleton, nunca itens de outra lista.
+- Tudo fica sob `['user', userId]`: o logout e a troca de usuário removem os favoritos do cache (ver "Logout e troca de usuário"). Na API, os favoritos são filtrados pelo usuário do token, então ana e bruno têm listas independentes, persistidas no banco simulado (sobrevivem ao refresh).
+
+### Atualização otimista com rollback
+
+`useFavoriteToggle(nft)` concentra a regra; `FavoriteButton` (`src/components/favorites/favorite-button.tsx`) só exibe o estado e chama `toggle`.
+
+- O estado desejado é lido do cache no momento do clique (`getQueryData`), não do último render, para que cliques seguidos alternem corretamente.
+- `onMutate`: cancela o refetch em andamento do índice, guarda se o NFT era favorito (`previous`) e grava o novo estado no índice com `setQueryData`. O botão muda na hora.
+- `mutationFn`: `PUT /api/favorites/:nftId` ou `DELETE /api/favorites/:nftId` (ambos idempotentes), sem novas tentativas automáticas.
+- `scope: { id: 'favorite:<userId>:<nftId>' }`: mutations do mesmo NFT rodam em série, então os pedidos chegam à API na ordem dos cliques mesmo com latência variável. Os `onMutate` continuam imediatos.
+- `onError`: se não há mutation mais nova pendente para o mesmo NFT, restaura `previous` no índice (quando há, é a mais nova que define o estado desejado). Mostra a notificação "Não foi possível favoritar X." (ou "remover X dos favoritos") com "O estado anterior foi restaurado. Tente novamente.", anunciada pela região `aria-live` do Sonner.
+- `onSuccess`: anuncia "X foi adicionado aos favoritos." ou "X foi removido dos favoritos." pelo `LiveAnnouncer`.
+- `onSettled`: quando é a última mutation de favoritos pendente do usuário, invalida `['user', userId, 'favorites']` (índice e listas) e sincroniza com a API. Isso também corrige qualquer estado intermediário de cliques repetidos.
+- Todos os callbacks conferem se o usuário da mutation ainda é o da sessão; se a sessão mudou no meio, nada é escrito no cache.
+- Na lista de favoritos, desfavoritar não remove o card na hora: o coração muda imediatamente e a lista é refeita no `onSettled`, para não quebrar o total e a paginação.
+
+### Visitante e rotas
+
+- Visitante que aciona um botão de favorito vai para `/login?redirect=<URL atual>` e volta para a mesma página ao entrar.
+- `/?favorites=true` sem sessão: o `beforeLoad` da rota `/` redireciona para `/login?redirect=/?favorites=true…` com `replace`. `isPrivatePath` trata essa URL como privada: o logout nela leva a `/`, e fechar o diálogo de login não volta para ela.
+- A aba "Favoritos" da barra mobile e "Lista de interesse" no rodapé levam a `/?favorites=true#catalogo`. Na lista, a aba "Favoritos" fica ativa no mobile e "Mercado" no header.
+
+### Estados da lista
+
+- Vazio sem filtros: "Você ainda não tem favoritos", com o link "Explorar o catálogo".
+- Vazio com filtros: "Nenhum favorito encontrado", com "Limpar filtros" (mantém `favorites=true`).
+- Acima da grade: "Mostrando apenas os seus favoritos." com o botão "Ver todo o catálogo", que remove `favorites` e mantém os demais filtros.
+- Erro: "Não foi possível carregar seus favoritos", com "Tentar novamente". A contagem anunciada usa "favoritos" ("2 favoritos encontrados.").
+
+### Testes (`e2e/favorites.spec.ts`)
+
+Favoritar e desfavoritar no detalhe com persistência após refresh; falha da mutation (`favorite-failure`, latência fixa) com estado otimista, rollback, notificação e recuperação ao tentar de novo; três cliques seguidos terminando em estado consistente após refresh; visitante levado ao login e de volta ao detalhe; visitante em `/?favorites=true` levado ao login e de volta à lista; lista aberta pela aba mobile ou pelo rodapé, combinada com categoria, ordenação e busca, conferindo `favorites=true`, filtros e `Authorization` na requisição; remoção pelo coração do card (mobile); isolamento entre ana e bruno, estado vazio e retorno ao catálogo.
+
 ## Carrinho
 
 _A preencher._
@@ -342,7 +383,7 @@ A rota `/` valida os search params em `src/lib/catalog-search.ts` (`validateCata
 | `page` | inteiro de 1 a 10 000 | `1` | volta a 1 |
 | `favorites` | `true` ou `false` | `false` | volta a `false` |
 
-- `favorites` está reservado para a tarefa de favoritos: já é validado e preservado na URL, mas ainda não altera a lista nem é enviado à API.
+- `favorites=true` mostra só os favoritos do usuário logado (ver "Favoritos"). Combina com busca, filtros, segmento, ordenação e paginação, que são enviados à API junto com `favorites=true`.
 
 - O middleware `stripSearchParams` remove da URL os valores iguais ao padrão.
 - Listas são escritas com valores separados por vírgula (`?category=photography,music&network=ethereum`). O router usa `parseSearch` e `stringifySearch` próprios (`src/lib/search-serialization.ts`): arrays de strings viram `a,b` e a vírgula não é codificada como `%2C`; os demais valores seguem a serialização JSON padrão do TanStack Router. Na leitura, o validador separa os valores pela vírgula. URLs antigas em JSON (`?category=["music"]`) continuam aceitas e passam ao formato novo na próxima navegação. Os valores de categoria e rede nunca contêm vírgula.
@@ -407,13 +448,13 @@ A API REST é a fonte da verdade; os eventos só aceleram a atualização do cac
 
 As chaves vêm de `src/lib/query-keys.ts`. Dados privados ficam sob `['user', userId, …]` e os do visitante sob `['guest', …]`, o que permite limpar tudo de um usuário por prefixo e impede que caches de usuários diferentes se misturem.
 
-- `nft.updated`: atualiza `['nfts', 'detail', id]`, os itens correspondentes em todas as `['nfts', 'list', params]` e nos favoritos do usuário; invalida o carrinho e a cotação do dono atual (`['user', id, 'cart']` ou `['guest', 'cart']`), que são recalculados pela API.
+- `nft.updated`: atualiza `['nfts', 'detail', id]`, os itens correspondentes em todas as `['nfts', 'list', params]` no índice de favoritos e nas listas `['user', id, 'favorites', 'list', params]`; invalida o carrinho e a cotação do dono atual (`['user', id, 'cart']` ou `['guest', 'cart']`), que são recalculados pela API.
 - `order.updated`: substitui `['user', userId, 'orders', 'detail', id]` e invalida as listas de pedidos. Na confirmação, invalida também carrinho e cotação, porque a API removeu os itens comprados.
 
 ### Reconexão
 
 - O socket reconecta sozinho, com atraso entre 0,5 e 4 s. Durante a espera, o estado fica `reconnecting`.
-- A cada reconexão (todo `connect` depois do primeiro), as queries ativas de NFTs, carrinho, cotação e pedidos são invalidadas e refeitas pela API, cobrindo eventos perdidos durante a queda.
+- A cada reconexão (todo `connect` depois do primeiro), as queries ativas de NFTs, favoritos, carrinho, cotação e pedidos são invalidadas e refeitas pela API, cobrindo eventos perdidos durante a queda.
 - Pedidos pendentes são retomados pela API (`GET /api/orders/:id` ou `GET /api/orders?status=pending`) e pelo próximo `order.updated`.
 
 ### Estado e feedback
@@ -598,6 +639,13 @@ window.__mocks.getRealtimeStatus()
 - "Mais desta coleção": lista com rolagem horizontal e snap. Os pontos são botões "Página N de M" com `aria-current`. Com `prefers-reduced-motion`, a rolagem pelos pontos é instantânea.
 - O skeleton tem `aria-hidden` e usa as mesmas classes de layout da tela final, mais um `output` "Carregando NFT…" para leitores de tela.
 
+### Favoritos
+
+- Os botões de favorito são `button` com `aria-pressed` e nome que muda: "Favoritar Emerald Ape #042" ou "Remover Emerald Ape #042 dos favoritos". No desktop, o texto visível ("Favoritar"/"Remover") é o início do nome acessível. O estado também muda a forma (coração vazio ou preenchido), não só a cor.
+- Enquanto a lista de favoritos do usuário carrega, o botão fica com `aria-disabled` (continua focável) e o clique é ignorado.
+- No card, o botão fica fora do link do card (não há elemento interativo dentro de link). O círculo tem 28 px, como no Figma, e a área de toque é ampliada para 44 px.
+- Sucesso e falha são anunciados (ver "Atualização otimista com rollback").
+
 ## Desvios do Figma e decisões de UX
 
 ### Tipografia
@@ -610,7 +658,7 @@ window.__mocks.getRealtimeStatus()
 
 ### Links e ações fora do escopo
 
-Criadores, Aprenda, Favoritos, o botão central da barra mobile, os itens de "Meu perfil" sem tela (Minha coleção, Atividade, Estúdio do criador, Lista de interesse), toda a "Central de ajuda", as redes sociais e a newsletter não fazem parte da entrega. Todos seguem o mesmo comportamento:
+Criadores, Aprenda, o botão central da barra mobile, os itens de "Meu perfil" sem tela (Minha coleção, Atividade, Estúdio do criador), toda a "Central de ajuda", as redes sociais e a newsletter não fazem parte da entrega. Todos seguem o mesmo comportamento:
 
 - são `<button>` com `aria-disabled="true"` e "(em breve)" no nome acessível, e não links, porque não há destino;
 - ao serem acionados, exibem uma notificação "em breve" informando que o recurso não faz parte desta versão. A notificação é anunciada por uma região `aria-live="polite"`;
@@ -637,7 +685,7 @@ E-mail e telefone de contato do rodapé são fictícios e aparecem como texto, s
 - O Figma mostra apenas a ordenação "Listados recentemente" (`recent`). As ordenações preço crescente (`price-asc`), preço decrescente (`price-desc`), nome (`name-asc`) e avaliação (`rating-desc`) foram acrescentadas.
 - O Figma desktop mostra só a página 1, com os botões 1 a 4 e "próxima". A paginação mostra a primeira e a última página, a atual e as vizinhas, com reticências, e o botão "anterior" a partir da página 2.
 - Estados sem frame (vazio, erro, página inexistente, atualização em segundo plano, "Limpar filtros", "Esgotado") seguem os tokens do Figma: superfície Surface Card, títulos em Foreground e ações com o botão primário.
-- No mobile os cards mostram o selo de raridade ("Raro", "Lendário") como no frame; no desktop o Figma não o mostra. A grade mobile tem a segunda coluna deslocada para baixo, como no frame.
+- No mobile os cards mostram o selo de raridade ("Raro", "Lendário") e o coração de favorito no canto superior direito da imagem, como no frame; no desktop o Figma não mostra nenhum dos dois, e lá o favorito fica no detalhe. No mobile, o selo "Esgotado" foi para o canto inferior esquerdo da imagem, porque o canto superior direito é do coração. A grade mobile tem a segunda coluna deslocada para baixo, como no frame.
 - Abaixo de 1024 px a barra lateral de filtros vira um drawer, aberto pelo botão de filtros ao lado da busca (mobile, como no Figma) ou pelo botão "Filtros" da barra de ordenação (tablet). O "NFT em destaque" só aparece com a barra lateral (a partir de 1024 px); abaixo disso os destaques ficam no banner.
 - No frame do Figma o texto da segunda chamada ("Arte digital selecionada…") aparece cortado; aqui ele é exibido inteiro.
 - As chamadas "Lançamentos gênesis" e "Arte digital selecionada" levam ao catálogo com `segment=new` e `category=digital-art`. O Diário da Cunhagem é editorial e fora do escopo: o conteúdo é fixo e "Ler mais" segue o padrão "em breve".
@@ -647,7 +695,8 @@ E-mail e telefone de contato do rodapé são fictícios e aparecem como texto, s
 
 ### Detalhe do NFT
 
-- Favoritar e Comprar (desktop), o coração (mobile) e os botões "Comprar NFT" e carrinho da barra mobile ainda não aparecem. Eles serão ligados à API nas tarefas de favoritos e carrinho, e nenhum botão ficou sem função.
+- Comprar (desktop) e os botões "Comprar NFT" e carrinho da barra mobile ainda não aparecem; serão ligados à API na tarefa de carrinho, e nenhum botão ficou sem função.
+- Favoritar (desktop) fica à direita da quantidade, onde o Figma o mostra depois de "Comprar". Favoritado, o botão troca o texto para "Remover" e preenche o coração, para o estado não depender só de cor; o Figma não desenha esse estado. No mobile, o coração fica no topo, ao lado do botão de voltar, com o mesmo círculo dele.
 - Foram acrescentadas as linhas "Criador: …" e "Disponível: N de M na edição X", que não estão no Figma: o enunciado pede o criador, e a disponibilidade explica o limite de quantidade e reflete o `nft.updated`.
 - O preço exibido é o da edição selecionada. O Figma mostra o da `1/50`, que é a edição padrão. Quando há preço anterior, ele aparece riscado ao lado.
 - No Figma, os rótulos "Contrato:" e "Direitos autorais:" aparecem trocados em relação ao conteúdo. Aqui "Contrato:" mostra o endereço abreviado e o padrão (`0x7A42...19E8 · Contrato inteligente ERC-721 verificado.`), e "Direitos autorais:" mostra o percentual do criador. O endereço completo fica no atributo `title`.
@@ -669,6 +718,7 @@ E-mail e telefone de contato do rodapé são fictícios e aparecem como texto, s
 - O link "Crie uma conta"/"Entre" no rodapé da tela mobile é sublinhado, para não depender só do texto (no Figma tem a mesma cor do texto ao redor).
 - Mensagens de erro (Coral), resumo do erro e aviso de sessão expirada não têm frame e seguem os tokens.
 - A senha do cadastro tem uma dica só para leitores de tela ("pelo menos 8 caracteres, com letras e números"), sem texto visível, para não alterar a composição.
+- Campos preenchidos pelo autocompletar do navegador mantêm o fundo e a cor de texto do tema: `:-webkit-autofill` (em `src/index.css`) fixa o texto em Foreground e adia a troca de fundo do navegador com `transition-delay`, que não é afetado pela regra de movimento reduzido.
 
 ### Mesclagem de classes
 

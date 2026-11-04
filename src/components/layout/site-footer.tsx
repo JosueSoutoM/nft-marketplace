@@ -42,7 +42,7 @@ const HELP_LINKS = [
   'Denunciar item',
 ]
 
-const PROFILE_COMING_SOON = ['Minha coleção', 'Atividade', 'Estúdio do criador', 'Lista de interesse']
+const PROFILE_COMING_SOON = ['Minha coleção', 'Atividade', 'Estúdio do criador']
 
 const COLLECTIONS: Array<{ label: string; category: NftCategoryId }> = [
   { label: 'Arte digital', category: 'digital-art' },
@@ -179,6 +179,11 @@ function FooterLinks() {
             </ComingSoonButton>
           </li>
         ))}
+        <li>
+          <Link to="/" search={{ favorites: true }} hash={CATALOG_HASH} className={footerLinkClass}>
+            Lista de interesse
+          </Link>
+        </li>
       </FooterColumn>
 
       <FooterColumn title="Central de ajuda">

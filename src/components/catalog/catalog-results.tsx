@@ -1,4 +1,5 @@
-import { AlertTriangle, SearchX } from 'lucide-react'
+import type { ReactNode } from 'react'
+import { AlertTriangle, Heart, SearchX } from 'lucide-react'
 import type { NftSummary } from '@/api/contracts'
 import { Button } from '@/components/ui/button'
 import { NftCard, NftCardSkeleton } from './nft-card'
@@ -33,15 +34,15 @@ export function CatalogGridSkeleton({ count }: { count: number }) {
 }
 
 type CatalogMessageProps = {
-  tone: 'empty' | 'error'
+  tone: 'empty' | 'error' | 'favorites'
   title: string
   description: string
-  actionLabel: string
-  onAction: () => void
-}
+} & ({ actionLabel: string; onAction: () => void; action?: never } | { action: ReactNode; actionLabel?: never; onAction?: never })
 
-export function CatalogMessage({ tone, title, description, actionLabel, onAction }: CatalogMessageProps) {
-  const Icon = tone === 'error' ? AlertTriangle : SearchX
+const ICONS = { empty: SearchX, error: AlertTriangle, favorites: Heart }
+
+export function CatalogMessage({ tone, title, description, actionLabel, onAction, action }: CatalogMessageProps) {
+  const Icon = ICONS[tone]
 
   return (
     <div
@@ -51,9 +52,11 @@ export function CatalogMessage({ tone, title, description, actionLabel, onAction
       <Icon className="size-10 text-text-accent" aria-hidden="true" />
       <h3 className="text-body-lg font-bold text-foreground">{title}</h3>
       <p className="max-w-md text-body-sm text-text-secondary">{description}</p>
-      <Button onClick={onAction} className="mt-2 font-bold">
-        {actionLabel}
-      </Button>
+      {action ?? (
+        <Button onClick={onAction} className="mt-2 font-bold">
+          {actionLabel}
+        </Button>
+      )}
     </div>
   )
 }

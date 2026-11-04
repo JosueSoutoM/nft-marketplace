@@ -5,7 +5,7 @@ import { UserAvatar } from '@/components/account/user-avatar'
 import { useSession } from '@/hooks/use-session'
 import { cn } from '@/lib/utils'
 import { ComingSoonButton } from './coming-soon'
-import { useActiveSection } from './use-active-section'
+import { CATALOG_HASH, useActiveSection } from './use-active-section'
 
 const tabClass =
   'flex size-12 items-center justify-center rounded-full text-text-secondary transition-colors hover:text-text-accent'
@@ -59,9 +59,16 @@ export function MobileTabBar() {
               </Link>
             </li>
             <li>
-              <ComingSoonButton feature="Favoritos" aria-label="Favoritos" className={tabClass}>
+              <Link
+                to="/"
+                search={{ favorites: true }}
+                hash={CATALOG_HASH}
+                aria-label="Favoritos"
+                aria-current={section === 'favorites' ? 'page' : undefined}
+                className={cn(tabClass, section === 'favorites' && activeTabClass)}
+              >
                 <Heart className="size-6" fill="currentColor" aria-hidden="true" />
-              </ComingSoonButton>
+              </Link>
             </li>
             <li aria-hidden="true" />
             <li>

@@ -1,5 +1,6 @@
 import { Star } from 'lucide-react'
 import type { Nft, NftEdition } from '@/api/contracts'
+import { FavoriteButton } from '@/components/favorites/favorite-button'
 import { EditionPicker } from './edition-picker'
 import { infoClass, infoLineClass, titleClass } from './layout'
 import { NftPrice } from './nft-price'
@@ -61,13 +62,12 @@ export function NftInfo({
 
       <EditionPicker editions={nft.editions} selectedId={edition.id} onSelect={onSelectEdition} />
 
-      <QuantityStepper
-        quantity={quantity}
-        max={max}
-        limitReason={limitReason}
-        onChange={onQuantityChange}
-        className="mt-4 hidden md:flex"
-      />
+      <div className="mt-4 hidden items-start justify-between gap-4 md:flex">
+        <QuantityStepper quantity={quantity} max={max} limitReason={limitReason} onChange={onQuantityChange} />
+        <div className="flex items-center gap-2 pt-1.5">
+          <FavoriteButton nft={nft} variant="labeled" />
+        </div>
+      </div>
 
       <dl className="mt-3 md:mt-4">
         <InfoLine term="ID do token" value={`#${nft.tokenId}`} />

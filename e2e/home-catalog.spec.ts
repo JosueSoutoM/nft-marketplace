@@ -338,21 +338,6 @@ test('updates the card price from a Socket.IO event without reloading', async ({
   expect(await page.evaluate(() => performance.timeOrigin)).toBe(navigationStart)
 })
 
-test('keeps the favorites param reserved without changing the list', async ({ page }) => {
-  const requests: string[] = []
-  page.on('request', (request) => {
-    if (new URL(request.url()).pathname === '/api/nfts') {
-      requests.push(request.url())
-    }
-  })
-  await openApp(page, '/?favorites=true')
-
-  await expect(cardNames(page)).toHaveText(FIRST_PAGE)
-  expect(searchParam(page, 'favorites')).toBe('true')
-  expect(requests.length).toBeGreaterThan(0)
-  expect(requests.every((url) => !url.includes('favorites'))).toBe(true)
-})
-
 test('has no horizontal overflow at 768 px', async ({ page, isMobile }) => {
   test.skip(isMobile, 'Verificado no projeto desktop com viewport de tablet')
   await page.setViewportSize({ width: 768, height: 1024 })

@@ -21,8 +21,16 @@ function pathnameOf(href: string): string {
   return new URL(href, window.location.origin).pathname
 }
 
+export function isFavoritesListHref(href: string): boolean {
+  const url = new URL(href, window.location.origin)
+  return url.pathname === '/' && url.searchParams.get('favorites') === 'true'
+}
+
 export function isPrivatePath(router: AnyRouter, href: string): boolean {
-  return router.matchRoutes(pathnameOf(href)).some((match) => match.routeId === PRIVATE_LAYOUT_ID)
+  return (
+    isFavoritesListHref(href) ||
+    router.matchRoutes(pathnameOf(href)).some((match) => match.routeId === PRIVATE_LAYOUT_ID)
+  )
 }
 
 export function loginRedirectFor(href: string): string | undefined {

@@ -1,5 +1,6 @@
 import { Link } from '@tanstack/react-router'
 import type { NftRarity, NftSummary } from '@/api/contracts'
+import { FavoriteButton } from '@/components/favorites/favorite-button'
 import { NftImage } from '@/components/nft/nft-image'
 import { Skeleton } from '@/components/ui/skeleton'
 import { formatEth } from '@/lib/eth'
@@ -31,7 +32,7 @@ export function NftCard({ nft, eager = false }: NftCardProps) {
   const soldOut = isSoldOut(nft)
 
   return (
-    <article className="group">
+    <article className="group relative">
       <Link
         to="/nfts/$nftId"
         params={{ nftId: nft.id }}
@@ -50,7 +51,7 @@ export function NftCard({ nft, eager = false }: NftCardProps) {
             </span>
           )}
           {soldOut && (
-            <span className="absolute top-3 right-3 rounded-md bg-ink/85 px-2.5 py-1 text-caption font-bold text-foreground uppercase md:top-10 md:right-3">
+            <span className="absolute bottom-8 left-3 rounded-md bg-ink/85 px-2.5 py-1 text-caption font-bold text-foreground uppercase md:top-10 md:right-3 md:bottom-auto md:left-auto">
               Esgotado
             </span>
           )}
@@ -68,6 +69,7 @@ export function NftCard({ nft, eager = false }: NftCardProps) {
           )}
         </p>
       </Link>
+      <FavoriteButton nft={nft} variant="card" className="absolute top-2.5 right-2.5 md:hidden" />
     </article>
   )
 }
