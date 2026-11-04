@@ -43,6 +43,7 @@ export function NftCard({ nft, eager = false }: NftCardProps) {
             image={nft.image}
             sizes="(min-width: 1280px) 250px, (min-width: 768px) 30vw, 45vw"
             loading={eager ? 'eager' : 'lazy'}
+            fetchPriority={eager ? 'high' : 'auto'}
             className={cn(imageClass, 'bg-surface-raised object-cover transition-transform group-hover:scale-[1.02]')}
           />
           {badge && (

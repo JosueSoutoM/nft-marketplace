@@ -1,4 +1,6 @@
 import {
+  AVATAR_MAX_BYTES,
+  AVATAR_MIME_TYPES,
   ENS_NAME_PATTERN,
   EVM_ADDRESS_PATTERN,
   PASSWORD_MIN_LENGTH,
@@ -98,4 +100,14 @@ export function validateSecondaryAddress(network: NetworkId | null, value: strin
     return null
   }
   return 'Informe um nome ENS (.eth) ou um endereço válido para a rede selecionada.'
+}
+
+export function validateAvatarFile(file: Pick<File, 'type' | 'size'>): string | null {
+  if (!(AVATAR_MIME_TYPES as readonly string[]).includes(file.type)) {
+    return 'Use uma imagem PNG, JPEG ou WebP.'
+  }
+  if (file.size === 0) {
+    return 'O arquivo está vazio.'
+  }
+  return file.size > AVATAR_MAX_BYTES ? `A imagem deve ter até ${AVATAR_MAX_BYTES / 1024} KB.` : null
 }

@@ -102,7 +102,7 @@ const API_FIELDS: Record<string, CheckoutField> = {
   note: 'note',
 }
 
-function stripEns(value: string | null | undefined): string {
+export function stripEns(value: string | null | undefined): string {
   const trimmed = (value ?? '').trim().toLowerCase()
   return trimmed.endsWith(ENS_SUFFIX) ? trimmed.slice(0, -ENS_SUFFIX.length) : trimmed
 }

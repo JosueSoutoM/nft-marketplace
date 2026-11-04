@@ -5,10 +5,11 @@ import { applyUrlOverrides } from './scenarios'
 import { resumePendingOrders } from './services/orders'
 
 export async function startMocks(): Promise<void> {
+  const browser = import('./browser')
   await initDatabase()
   applyUrlOverrides()
   applyPanelVisibilityOverride()
-  const { worker } = await import('./browser')
+  const { worker } = await browser
   await worker.start({ onUnhandledRequest: 'bypass', quiet: true })
   resumePendingOrders()
   installMockControls()

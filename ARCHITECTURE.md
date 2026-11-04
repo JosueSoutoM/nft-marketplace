@@ -16,6 +16,9 @@ src/
     contracts/            tipos e constantes compartilhados entre cliente e mocks
   assets/icons/           SVGs otimizados (Google e Facebook)
   components/
+    account/              menu lateral "Meu perfil", layout das telas de conta, skeleton e erro de carga
+    profile/              tela de perfil: dados, avatar com prévia e troca de senha
+    wallets/              tela de carteiras: principal e secundária, resumo e formulário com validação por rede
     cart/                 tela do carrinho: itens, quantidade, cupom, resumo, avisos, estados e contador
     order/                tela do pedido: pendente, confirmado (recibo), recusado, não encontrado, explorador simulado e cópia do ID
     checkout/             pagamento: formulário do colecionador, carteiras, resumo da cotação, revisão, revalidação e envio idempotente
@@ -289,11 +292,17 @@ O payload trafega como objeto JSON no pacote de evento do Socket.IO (`42["nft.up
 - `loadSession(queryClient)` faz a mesma consulta com `staleTime: 0` e é usada pelos `beforeLoad` das rotas. Um 401 devolve `null` (o interceptor já encerrou a sessão); outras falhas são propagadas.
 - O header (desktop e tablet) mostra avatar, nome e um menu (Dados do perfil, Carteiras e Sair); enquanto a sessão carrega, um skeleton do mesmo tamanho. No mobile, a aba "Perfil" da barra inferior vira o mesmo menu, com o avatar. Sem avatar, aparecem as iniciais do nome.
 
+### Perfil e carteiras
+
+- Perfil: o campo "Nome ENS" usa o sufixo fixo `.eth`, como no pagamento, no lugar do seletor do Figma. "Alterar senha" ganhou uma linha de instrução (preenchimento opcional e política da senha). O avatar ganhou a dica de formato e tamanho e o estado da prévia; "Remover" vira "Descartar" ou "Desfazer" conforme o que está pendente.
+- Carteiras: o Figma mostra a carteira principal sempre como formulário e a ação "Adicionar". Aqui uma carteira cadastrada aparece como resumo com "Editar", e o formulário abre por essa ação (ou direto, quando não há carteira principal). O título da página ("Carteiras") é um `h1` visualmente oculto; os títulos visíveis são os das seções, como no frame.
+- Mobile e tablet (sem frame): o menu lateral vira uma faixa horizontal rolável e os campos ficam em uma coluna abaixo de 768 px. O botão "Salvar" ocupa a largura toda no mobile.
+
 ### Login e cadastro
 
 - `/login` e `/register` ficam sob o layout sem caminho `_auth` (`src/routes/_auth.tsx`), que valida `redirect` (apenas caminhos internos) e `reason` (`expired` ou `invalid`). Com sessão válida, o `beforeLoad` leva direto ao `redirect` (ou a `/`).
 - A partir de 768 px, o layout renderiza a tela inicial e, sobre ela, um `Dialog` do shadcn/ui com as abas "Entrar | Criar conta" (links para as duas URLs, preservando o `redirect`). O diálogo continua montado ao trocar de aba. Foco preso, foco inicial no primeiro campo; Esc ou "Fechar" levam ao `redirect` quando ele é público (ou a `/`) e devolvem o foco ao elemento que abriu o diálogo, ou ao conteúdo principal no acesso direto. Abaixo de 768 px, página inteira, como nos frames mobile.
-- Validação no cliente com as mesmas funções dos mocks (`src/lib/validation.ts`), sem biblioteca de formulário: são dois formulários pequenos, e `react-hook-form` + `zod` acrescentariam duas dependências sem ganho real. `useAuthForm` (`src/components/auth/use-auth-form.ts`) guarda valores, erros e o resumo.
+- Validação no cliente com as mesmas funções dos mocks (`src/lib/validation.ts`), sem biblioteca de formulário: são dois formulários pequenos, e `react-hook-form` + `zod` acrescentariam duas dependências sem ganho real. `useAuthForm` (`src/components/auth/use-auth-form.ts`) guarda valores, erros e o resumo, e é reutilizado nos formulários de perfil e carteiras.
 - Cada campo tem `label` (visualmente oculto, porque o Figma usa só placeholders), `aria-invalid` e `aria-describedby` com a mensagem de erro. No envio, um resumo (`role="alert"`) é anunciado ("Revise 2 campos: E-mail e Senha.") e o foco vai para o primeiro campo inválido. Os `fieldErrors` da API seguem o mesmo caminho: `EMAIL_TAKEN` aparece no campo de e-mail; `USERNAME_TAKEN` e o 422 do cenário `form-validation`, no de usuário. `INVALID_CREDENTIALS` mostra "E-mail ou senha incorretos. Confira os dados e tente novamente." e foca o e-mail.
 - O botão de envio fica desabilitado, com "Entrando…"/"Criando conta…", da requisição até o fim da navegação, e o handler ignora envios enquanto houver um pendente.
 - Sucesso (`useLogin`/`useRegister`, `src/hooks/use-auth.ts`): grava a `Session` no cache, salva o token, faz o merge do carrinho do visitante e navega para o `redirect` com `replace`. O resultado é anunciado ("Você entrou como Ana Ribeiro.").
@@ -545,6 +554,44 @@ O estado exibido é sempre o `status` do pedido vindo da API ou do `order.update
 ### Testes (`e2e/orders.spec.ts`)
 
 Compra completa do catálogo ao recibo com `page.clock` (a liquidação de 3 s acontece no `fastForward`), com foco, anúncio, valores do snapshot, cópia do ID, explorador simulado, carrinho vazio e rascunho apagado; pagamento recusado com itens preservados, nova tentativa com chave nova e `order-0002`; refresh com pedido pendente e "Atualizar status"; queda do socket (`refuseRealtime`) com pedido liquidado durante a queda e retomada pela API; `order.updated` duplicado e antigo ignorados, sem regressão nem novo anúncio; recibo imutável após `updateNft`; remoção parcial do carrinho (itens adicionados depois da criação permanecem); Bruno recebe "Pedido não encontrado" para o pedido de Ana. Em `e2e/checkout.spec.ts`, clique duplo e `order-timeout` seguem até o recibo, com um único pedido.
+
+## Perfil e carteiras
+
+### Dados e chaves
+
+- `useProfile` lê `GET /api/profile` em `['user', userId, 'profile']`. `useUpdateProfile`, `useUpdateAvatar` e `useRemoveAvatar` (`src/hooks/use-profile.ts`) gravam a resposta da API nessa chave e atualizam `displayName`, `username`, `email` e `avatarUrl` da sessão em `['user', userId, 'session']`, para que o header e a barra inferior mostrem o novo nome e o novo avatar sem nova consulta. A gravação é descartada se a sessão mudou de usuário durante a requisição.
+- `useChangePassword` chama `POST /api/profile/password` e não toca no cache (a resposta é 204).
+- `useSaveWallet` (`src/hooks/use-wallets.ts`) chama `PUT /api/wallets/{slot}`, substitui a carteira do slot em `['user', userId, 'wallets']` e invalida a lista, porque salvar a principal também atualiza a secundária espelhada no servidor. Pagamento e carteiras compartilham essa chave.
+- As alterações só aparecem como salvas depois da resposta da API; o refresh relê tudo da API simulada, que persiste o banco no `localStorage`.
+
+### Tela de perfil (`/profile`)
+
+- Um único botão "Salvar", como no Figma, aplica em sequência: dados do perfil (só se algo mudou), avatar (se houver envio ou remoção pendente) e senha (só se algum campo de senha foi preenchido). A sequência para no primeiro erro; o que já foi confirmado aparece na mensagem de sucesso ("Dados do perfil salvos. Avatar atualizado.").
+- Validação no cliente com as mesmas regras do servidor (`src/lib/validation.ts`): nome de exibição 2 a 50, nome de usuário no padrão do cadastro, e-mail, nome ENS e apelido 2 a 40. A senha valida a atual, a política da nova senha, a diferença em relação à atual e a confirmação.
+- Erros da API (`fieldErrors`) aparecem no campo correspondente: e-mail ou nome de usuário em uso (409), senha atual incorreta, conteúdo do avatar que não é imagem e os erros do cenário `form-validation`.
+- Avatar: "Alterar" abre o seletor de arquivo. O tipo (PNG, JPEG, WebP) e o tamanho (até 512 KB) são validados antes da prévia; a prévia usa `URL.createObjectURL` (revogada ao trocar ou desmontar). "Remover" marca a remoção, "Descartar" desfaz a prévia e "Desfazer" cancela a remoção. Nada é enviado antes de "Salvar". O servidor confere a assinatura dos bytes.
+- Depois da troca de senha os campos são limpos; o servidor encerra as outras sessões do usuário e mantém a atual.
+
+### Tela de carteiras (`/wallets`)
+
+- Carteira principal e secundária em seções com título. Uma carteira cadastrada aparece como resumo (apelido, tipo, rede, endereço, ENS ou secundária e nome ENS) com a ação "Editar"; sem carteira, a ação é "Adicionar". Uma conta sem carteira principal abre o formulário direto, como no Figma.
+- Formulário com os campos do Figma, pré-preenchido com a carteira ou, para uma nova, com os dados do perfil. O endereço é validado pela rede escolhida (Ethereum e Polygon `0x` + 40 hex; Solana base58 de 32 a 44 caracteres), no cliente e no servidor. O placeholder muda com a rede.
+- "Igual à carteira principal" envia `{ sameAsPrimary: true }`; desmarcar abre o formulário para tornar a secundária independente. A secundária exige a principal: enquanto ela não existe, a opção e "Adicionar" ficam desabilitadas com a explicação ligada por `aria-describedby`.
+- Ao salvar ou cancelar, o foco volta ao botão "Editar" da seção; ao abrir o formulário, vai para o primeiro campo.
+
+### Menu lateral
+
+- `AccountNav` (`src/components/account/account-nav.tsx`) é o "Meu perfil" do Figma: "Dados do perfil" e "Carteiras" levam às rotas, com `aria-current="page"` e barra laranja na atual; "Lista de interesse" leva a `/?favorites=true#catalog`; "Atividade", "Ofertas", "Arquivos baixados" e "Suporte" ficam fora do escopo e usam o aviso "em breve"; "Sair" faz logout.
+- A partir de 1024 px o menu fica à esquerda (310 px). Abaixo disso vira uma faixa horizontal com rolagem própria acima do conteúdo, sem overflow da página em 390 e 768 px.
+
+### Estados
+
+- Enquanto perfil, carteiras ou redes carregam, um skeleton com shimmer mostra o título e os campos na mesma grade do formulário. Falha de carga mostra `role="alert"` com "Tentar novamente".
+- Durante o envio, o botão fica desabilitado com "Salvando…" e os campos ficam somente leitura.
+
+### Testes (`e2e/account.spec.ts`)
+
+Menu lateral entre perfil e carteiras sem overflow horizontal; validação do perfil no cliente com resumo, foco no primeiro inválido e descrições, e-mail em uso (409) e erro de campo da API (`form-validation`), sem persistir nada; edição do perfil com o novo nome no header e persistência após refresh; avatar com tipo e tamanho recusados no cliente, conteúdo inválido recusado pela API, prévia, envio, persistência e remoção; senha atual ausente e incorreta, troca com sucesso, login com a senha antiga recusado e com a nova aceito; edição da carteira principal com endereço inválido para Ethereum e para Solana, erro da API e persistência após refresh; cadastro da secundária de Bruno com campos obrigatórios, endereço inválido, persistência e espelhamento da principal; cadastro da carteira principal de uma conta nova.
 
 ## Estado do catálogo na URL
 
@@ -825,6 +872,13 @@ window.__mocks.getRealtimeStatus()
 - Enquanto a lista de favoritos do usuário carrega, o botão fica com `aria-disabled` (continua focável) e o clique é ignorado.
 - No card, o botão fica fora do link do card (não há elemento interativo dentro de link). O círculo tem 28 px, como no Figma, e a área de toque é ampliada para 44 px.
 - Sucesso e falha são anunciados (ver "Atualização otimista com rollback").
+
+### Perfil e carteiras
+
+- Formulários com `noValidate`, `label` visível em cada campo, `aria-invalid`, `aria-describedby` apontando para o erro e para a dica, e resumo em `role="alert"` com foco no primeiro campo inválido (inclusive erros da API). O sucesso aparece em um `output` e é anunciado pela região `aria-live` global.
+- O avatar é um `fieldset` com legenda "Avatar"; o erro e a dica ficam ligados ao botão "Alterar". A prévia tem `alt` "Prévia do novo avatar"; sem avatar, o ícone tem o nome "Sem avatar".
+- Os botões de mostrar senha têm `aria-pressed` e o nome "Mostrar senha atual", "Mostrar nova senha" etc.
+- "Editar carteira principal" e "Adicionar carteira secundária" completam o nome acessível com a seção.
 
 ## Desvios do Figma e decisões de UX
 

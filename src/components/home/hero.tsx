@@ -117,10 +117,10 @@ function HeroDots({ slides, loading, activeIndex, onSelect }: HeroDotsProps) {
   const dotClass = 'size-2 rounded-full bg-primary transition-opacity'
 
   return (
-    <div className="absolute bottom-3 left-1/2 flex -translate-x-1/2 gap-1 md:right-[23rem] lg:right-[35rem] md:bottom-11 md:left-auto md:translate-x-0">
+    <div className="absolute bottom-2 left-1/2 flex -translate-x-1/2 md:right-[23rem] lg:right-[35rem] md:bottom-10 md:left-auto md:translate-x-0">
       {loading || slides.length === 0
         ? Array.from({ length: HERO_SLIDE_COUNT }, (_, index) => (
-            <span key={index} aria-hidden="true" className="flex size-4 items-center justify-center">
+            <span key={index} aria-hidden="true" className="flex size-6 items-center justify-center">
               <span className={cn(dotClass, 'opacity-40')} />
             </span>
           ))
@@ -131,7 +131,7 @@ function HeroDots({ slides, loading, activeIndex, onSelect }: HeroDotsProps) {
               aria-label={`Mostrar destaque ${index + 1} de ${slides.length}: ${slide.name}`}
               aria-pressed={index === activeIndex}
               onClick={() => onSelect(index)}
-              className="flex size-4 items-center justify-center rounded-full"
+              className="flex size-6 items-center justify-center rounded-full"
             >
               <span className={cn(dotClass, index === activeIndex ? 'opacity-100' : 'opacity-50')} />
             </button>

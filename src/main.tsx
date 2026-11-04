@@ -30,9 +30,15 @@ async function enableMocks() {
   await startMocks()
 }
 
+function preloadRouteChunks() {
+  const matches = router.matchRoutes(router.latestLocation)
+  const chunks = matches.map((match) => router.loadRouteChunk(router.routesById[match.routeId as keyof typeof router.routesById]))
+  return Promise.all(chunks).catch(() => undefined)
+}
+
 installSessionCacheIsolation(queryClient)
 
-Promise.all([enableMocks(), waitForFont()]).then(() => {
+Promise.all([enableMocks(), waitForFont(), preloadRouteChunks()]).then(() => {
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
       <QueryClientProvider client={queryClient}>

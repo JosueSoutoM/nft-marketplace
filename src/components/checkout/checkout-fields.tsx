@@ -1,4 +1,5 @@
-import { useId, type ComponentProps, type ReactNode, type Ref } from 'react'
+import { useId, useState, type ComponentProps, type ReactNode, type Ref } from 'react'
+import { Eye, EyeOff } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
@@ -89,6 +90,43 @@ export function TextField({ label, value, error, hint, hideLabel, suffix, inputR
       ) : (
         input
       )}
+    </FieldShell>
+  )
+}
+
+type RevealableFieldProps = Omit<TextFieldProps, 'type' | 'suffix'>
+
+export function RevealablePasswordField({ label, value, error, hint, inputRef, onValueChange, className, required, ...props }: RevealableFieldProps) {
+  const id = useId()
+  const [visible, setVisible] = useState(false)
+  const Icon = visible ? Eye : EyeOff
+
+  return (
+    <FieldShell id={id} label={label} required={required} error={error} hint={hint} className={className}>
+      <div className="relative">
+        <Input
+          id={id}
+          ref={inputRef}
+          type={visible ? 'text' : 'password'}
+          value={value}
+          onChange={(event) => onValueChange?.(event.target.value)}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={describedBy(id, error, hint)}
+          aria-required={required || undefined}
+          className={cn(fieldControlClass, 'pr-12', error && 'border-text-coral')}
+          {...props}
+        />
+        <button
+          type="button"
+          aria-controls={id}
+          aria-pressed={visible}
+          aria-label={`Mostrar ${label.toLowerCase()}`}
+          onClick={() => setVisible((current) => !current)}
+          className="absolute inset-y-0 right-1 flex w-10 items-center justify-center rounded-sm text-secondary transition-colors hover:text-text-accent aria-pressed:text-text-accent"
+        >
+          <Icon className="size-5" aria-hidden="true" />
+        </button>
+      </div>
     </FieldShell>
   )
 }

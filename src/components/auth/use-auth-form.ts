@@ -18,7 +18,7 @@ export function useAuthForm<F extends string>(initial: Record<F, string>, labels
   const [values, setValues] = useState(initial)
   const [errors, setErrors] = useState<Errors<F>>({})
   const [summary, setSummary] = useState<FormSummary | null>(null)
-  const inputs = useRef(new Map<F, HTMLInputElement>())
+  const inputs = useRef(new Map<F, HTMLElement>())
   const summaryCount = useRef(0)
 
   useEffect(() => {
@@ -54,7 +54,7 @@ export function useAuthForm<F extends string>(initial: Record<F, string>, labels
     return {
       value: values[name],
       error: errors[name],
-      inputRef: (element: HTMLInputElement | null) => {
+      inputRef: (element: HTMLElement | null) => {
         if (element) {
           inputs.current.set(name, element)
         } else {
@@ -70,5 +70,13 @@ export function useAuthForm<F extends string>(initial: Record<F, string>, labels
     }
   }
 
-  return { values, field, fail, failWithApiErrors, summary }
+  function setFieldValues(next: Partial<Record<F, string>>) {
+    setValues((current) => ({ ...current, ...next }))
+  }
+
+  function clearSummary() {
+    setSummary(null)
+  }
+
+  return { values, errors, field, fail, failWithApiErrors, summary, setFieldValues, clearSummary }
 }
