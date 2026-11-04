@@ -3,7 +3,7 @@ import type { WalletDetails, WalletSlot } from '@/api/contracts'
 export interface UserFixture {
   id: string
   email: string
-  password: string
+  passwordHash: string
   passwordSalt: string
   displayName: string
   username: string
@@ -18,7 +18,7 @@ export const userFixtures: UserFixture[] = [
   {
     id: 'user-ana',
     email: 'ana@kurio.test',
-    password: 'Kurio#2026',
+    passwordHash: 'd484496fe7addc3416f8e708ae3c94056da6887f093bd5e2db0908f484b5685e',
     passwordSalt: '6b7572696f2d616e612d73616c742d3031',
     displayName: 'Ana Ribeiro',
     username: 'anaribeiro',
@@ -62,7 +62,7 @@ export const userFixtures: UserFixture[] = [
   {
     id: 'user-bruno',
     email: 'bruno@kurio.test',
-    password: 'Kurio#2026',
+    passwordHash: '9e25fe2ad8428766b2117c7c489fae39812451016d49ce297cea89db4c255c30',
     passwordSalt: '6b7572696f2d6272756e6f2d73616c742d3032',
     displayName: 'Bruno Tavares',
     username: 'brunotavares',

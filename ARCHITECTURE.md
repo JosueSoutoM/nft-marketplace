@@ -10,7 +10,7 @@ Kurio é um marketplace de NFTs construído como SPA com React, TypeScript e Vit
 e2e/                      testes Playwright e utilitários de controle dos mocks
 public/
   images/nfts/            imagens dos NFTs em WebP, servidas pela API simulada
-  mockServiceWorker.js    service worker do MSW (gerado por `msw init`)
+  mockServiceWorker.js    service worker do MSW (criado por `msw init`)
 src/
   api/                    cliente Axios, ApiError, sessão armazenada e funções REST por recurso
     contracts/            tipos e constantes compartilhados entre cliente e mocks
@@ -593,6 +593,12 @@ Compra completa do catálogo ao recibo com `page.clock` (a liquidação de 3 s a
 
 Menu lateral entre perfil e carteiras sem overflow horizontal; validação do perfil no cliente com resumo, foco no primeiro inválido e descrições, e-mail em uso (409) e erro de campo da API (`form-validation`), sem persistir nada; edição do perfil com o novo nome no header e persistência após refresh; avatar com tipo e tamanho recusados no cliente, conteúdo inválido recusado pela API, prévia, envio, persistência e remoção; senha atual ausente e incorreta, troca com sucesso, login com a senha antiga recusado e com a nova aceito; edição da carteira principal com endereço inválido para Ethereum e para Solana, erro da API e persistência após refresh; cadastro da secundária de Bruno com campos obrigatórios, endereço inválido, persistência e espelhamento da principal; cadastro da carteira principal de uma conta nova.
 
+### Testes (`e2e/responsive.spec.ts` e `e2e/keyboard.spec.ts`)
+
+Responsividade: em 390 px (projeto `mobile-chromium`), 768 px e 1440 px (projeto `desktop-chromium`), percorre início, detalhe, NFT inexistente, rota inexistente, cadastro, login, carrinho, pagamento, revisão do pedido, pedido pendente e confirmado, perfil e carteiras. Em cada tela, espera o conteúdo sair do skeleton e verifica que não há overflow horizontal.
+
+Teclado: compra completa só com Tab, Shift+Tab, Enter, Esc e digitação, do card no catálogo até o recibo confirmado. Em cada alvo exige foco visível (outline ou mudança de borda/sombra). No diálogo de login, o foco inicial vai para o e-mail. No diálogo de revisão, o foco fica preso durante a navegação por Tab, Esc fecha e devolve o foco a "Confirmar compra", e o título do recibo recebe o foco ao confirmar.
+
 ## Estado do catálogo na URL
 
 A rota `/` valida os search params em `src/lib/catalog-search.ts` (`validateCatalogSearch`), sem biblioteca de validação: são poucos campos, todos com listas fechadas ou formatos já cobertos por `src/lib/eth.ts`.
@@ -716,7 +722,7 @@ Cada handler é registrado por `apiRoute(endpoint, resolver)`, que aplica a lat�
 ### Banco simulado
 
 - Um único objeto (`MockDatabase`) com usuários, sessões, NFTs, redes, favoritos, carrinhos, cupons, cotações, pedidos, carteiras e conexões de carteira, salvo em `localStorage` na chave `kurio.mocks.db.v3` a cada alteração (v3: endereços do explorador simulado nas redes). A versão do esquema faz parte da chave; um esquema diferente é descartado e substituído pelo seed.
-- Senhas são guardadas apenas como hash PBKDF2-SHA-256 (100 000 iterações) com salt por usuário, via Web Crypto. Tokens de sessão são aleatórios (32 bytes) e o banco guarda apenas o SHA-256 do token.
+- Senhas são guardadas apenas como hash PBKDF2-SHA-256 (100 000 iterações) com salt por usuário, via Web Crypto. As fixtures já trazem o hash e o salt dos usuários de demonstração; a senha em claro aparece só no README e nos testes, nunca no código da aplicação ou no banco simulado. Tokens de sessão são aleatórios (32 bytes) e o banco guarda apenas o SHA-256 do token.
 - Sessões têm expiração fixa (TTL padrão de 2 horas, configurável por `window.__mocks.setSessionTtl(segundos)`). Sessões expiradas continuam registradas por 24 horas para responder `SESSION_EXPIRED` em vez de `UNAUTHENTICATED`.
 - Identificadores criados pela simulação usam contadores (`user-0001`, `cart-0001`, `item-0001`, `quote-0001`, `order-0001`, `wallet-0001`), o que mantém os testes determinísticos. Cada carrinho guarda as 5 cotações mais recentes.
 

@@ -2,25 +2,22 @@ import { couponFixtures } from '../fixtures/coupons'
 import { networkFixtures } from '../fixtures/networks'
 import { buildNftFixtures } from '../fixtures/nfts'
 import { userFixtures } from '../fixtures/users'
-import { hashPassword } from './crypto'
 import { DB_SCHEMA_VERSION, type FavoriteRecord, type MockDatabase, type UserRecord, type WalletRecord } from './schema'
 
 export async function createSeed(): Promise<MockDatabase> {
-  const users: UserRecord[] = await Promise.all(
-    userFixtures.map(async (fixture) => ({
-      id: fixture.id,
-      email: fixture.email,
-      passwordHash: await hashPassword(fixture.password, fixture.passwordSalt),
-      passwordSalt: fixture.passwordSalt,
-      displayName: fixture.displayName,
-      username: fixture.username,
-      ensName: fixture.ensName,
-      walletNickname: fixture.walletNickname,
-      avatarUrl: null,
-      createdAt: fixture.createdAt,
-      updatedAt: fixture.createdAt,
-    })),
-  )
+  const users: UserRecord[] = userFixtures.map((fixture) => ({
+    id: fixture.id,
+    email: fixture.email,
+    passwordHash: fixture.passwordHash,
+    passwordSalt: fixture.passwordSalt,
+    displayName: fixture.displayName,
+    username: fixture.username,
+    ensName: fixture.ensName,
+    walletNickname: fixture.walletNickname,
+    avatarUrl: null,
+    createdAt: fixture.createdAt,
+    updatedAt: fixture.createdAt,
+  }))
 
   const wallets: WalletRecord[] = userFixtures.flatMap((fixture) =>
     fixture.wallets.map(({ slot, details }) => ({
