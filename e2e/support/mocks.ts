@@ -8,11 +8,15 @@ export type Scenario =
   | 'server-error'
   | 'service-unavailable'
   | 'transient-failure'
+  | 'session-expired'
+  | 'register-conflict'
+  | 'form-validation'
 
 export type Latency = 'none' | 'fixed' | 'slow' | 'variable'
 
 interface MockControls {
   setScenario: (name: Scenario) => void
+  expireSessions: () => void
   updateNft: (nftId: string, update: { editionId?: string; price?: string; available?: number }) => unknown
   getRealtimeStatus: () => { connections: Array<{ id: string; userId: string | null }> }
 }

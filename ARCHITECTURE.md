@@ -41,18 +41,19 @@ src/
 | `/` | `routes/index.tsx` | Início | Público |
 | `/nfts/$nftId` | `routes/nfts.$nftId.tsx` | Detalhes do NFT | Público |
 | `/cart` | `routes/cart.tsx` | Carrinho | Público |
-| `/login` | `routes/login.tsx` | Login | Público |
-| `/register` | `routes/register.tsx` | Cadastro | Público |
+| `/login` | `routes/_auth/login.tsx` | Login (diálogo sobre o início a partir de 768 px) | Público |
+| `/register` | `routes/_auth/register.tsx` | Cadastro (diálogo sobre o início a partir de 768 px) | Público |
 | `/checkout` | `routes/_authenticated/checkout.tsx` | Pagamento | Privado |
 | `/orders/$orderId` | `routes/_authenticated/orders.$orderId.tsx` | Confirmação de pedido | Privado |
 | `/profile` | `routes/_authenticated/profile.tsx` | Perfil do colecionador | Privado |
 | `/wallets` | `routes/_authenticated/wallets.tsx` | Carteiras | Privado |
 | qualquer outro | `notFoundComponent` da raiz | Página não encontrada | Público |
 
-- As rotas privadas ficam sob o layout `_authenticated`, que não altera a URL. A proteção será implementada nesse layout.
+- As rotas privadas ficam sob o layout `_authenticated`, que não altera a URL e verifica a sessão no `beforeLoad` (ver "Sessão").
+- Login e cadastro ficam sob o layout `_auth`, que também não altera a URL.
 - `/` guarda o estado do catálogo na URL (ver "Estado do catálogo na URL").
 - `/nfts/$nftId` aceita o search param `edition` (ver "Detalhe do NFT").
-- `/login` aceita o search param `redirect`. Apenas caminhos internos são aceitos (iniciados por `/` e não por `//`); qualquer outro valor é descartado. O botão "Entrar" do header envia a URL atual como `redirect`.
+- `/login` e `/register` aceitam os search params `redirect` e `reason`. Apenas caminhos internos são aceitos (iniciados por `/` e não por `//`); qualquer outro valor é descartado. O botão "Entrar" do header envia a URL atual como `redirect`.
 - `staticData.mobileActionBar` indica que a tela tem barra de ação fixa no mobile (detalhe): o layout raiz reserva o espaço inferior e afasta as notificações dessa barra.
 - `staticData.hideMobileTabBar` oculta a barra inferior no mobile nas telas que, no Figma, têm barra de ação própria ou ocupam a tela inteira: detalhes, carrinho, pagamento, login e cadastro.
 - O acesso direto e o refresh funcionam em qualquer rota: no desenvolvimento e no preview pelo fallback de SPA do Vite, e na Vercel pelo rewrite de `vercel.json`.
@@ -270,12 +271,57 @@ O payload trafega como objeto JSON no pacote de evento do Socket.IO (`42["nft.up
 
 ## Sessão
 
-Parte implementada até aqui (as telas e hooks de sessão virão nas próximas tarefas):
+### Armazenamento
 
-- `src/api/session-token.ts` guarda `{ token, userId }` em `localStorage` (`kurio.session`) e expõe um snapshot reativo (`subscribeSession`, `getSessionSnapshot`) com o motivo do último encerramento (`logout`, `expired` ou `invalid`).
-- O interceptor de resposta do Axios encerra a sessão quando uma requisição feita com o token atual recebe 401 `SESSION_EXPIRED` (motivo `expired`) ou `UNAUTHENTICATED` (motivo `invalid`). Erros de requisições feitas com um token antigo são ignorados.
-- O evento `storage` do navegador propaga login e logout entre abas da mesma origem.
-- A ponte de tempo real reage a qualquer mudança desse snapshot: login, logout, troca de usuário e expiração.
+- `src/api/session-token.ts` guarda apenas `{ token, userId }` em `localStorage` (`kurio.session`). Nenhuma senha é guardada no cliente; o token é opaco. O módulo expõe um snapshot reativo (`subscribeSession`, `getSessionSnapshot`) com o motivo do último encerramento (`logout`, `expired` ou `invalid`).
+- O interceptor de requisição do Axios envia `Authorization: Bearer <token>`. O de resposta encerra a sessão quando uma requisição feita com o token atual recebe 401 `SESSION_EXPIRED` (motivo `expired`) ou `UNAUTHENTICATED` (motivo `invalid`). Erros de requisições feitas com um token antigo são ignorados.
+- Os dados do usuário (`Session`) ficam no TanStack Query em `['user', userId, 'session']`, dentro do prefixo privado do usuário.
+
+### Recuperação após refresh
+
+- `useSession()` (`src/hooks/use-session.ts`) lê o snapshot e, se há token, consulta `GET /api/auth/session`. Devolve `anonymous`, `pending` (com `isError` em falha transitória) ou `authenticated` com o usuário. O `staleTime` é de 60 s, e um `refetchInterval` agendado para o `expiresAt` da sessão detecta a expiração por TTL mesmo sem outras requisições.
+- `loadSession(queryClient)` faz a mesma consulta com `staleTime: 0` e é usada pelos `beforeLoad` das rotas. Um 401 devolve `null` (o interceptor já encerrou a sessão); outras falhas são propagadas.
+- O header (desktop e tablet) mostra avatar, nome e um menu (Dados do perfil, Carteiras e Sair); enquanto a sessão carrega, um skeleton do mesmo tamanho. No mobile, a aba "Perfil" da barra inferior vira o mesmo menu, com o avatar. Sem avatar, aparecem as iniciais do nome.
+
+### Login e cadastro
+
+- `/login` e `/register` ficam sob o layout sem caminho `_auth` (`src/routes/_auth.tsx`), que valida `redirect` (apenas caminhos internos) e `reason` (`expired` ou `invalid`). Com sessão válida, o `beforeLoad` leva direto ao `redirect` (ou a `/`).
+- A partir de 768 px, o layout renderiza a tela inicial e, sobre ela, um `Dialog` do shadcn/ui com as abas "Entrar | Criar conta" (links para as duas URLs, preservando o `redirect`). O diálogo continua montado ao trocar de aba. Foco preso, foco inicial no primeiro campo; Esc ou "Fechar" levam ao `redirect` quando ele é público (ou a `/`) e devolvem o foco ao elemento que abriu o diálogo, ou ao conteúdo principal no acesso direto. Abaixo de 768 px, página inteira, como nos frames mobile.
+- Validação no cliente com as mesmas funções dos mocks (`src/lib/validation.ts`), sem biblioteca de formulário: são dois formulários pequenos, e `react-hook-form` + `zod` acrescentariam duas dependências sem ganho real. `useAuthForm` (`src/components/auth/use-auth-form.ts`) guarda valores, erros e o resumo.
+- Cada campo tem `label` (visualmente oculto, porque o Figma usa só placeholders), `aria-invalid` e `aria-describedby` com a mensagem de erro. No envio, um resumo (`role="alert"`) é anunciado ("Revise 2 campos: E-mail e Senha.") e o foco vai para o primeiro campo inválido. Os `fieldErrors` da API seguem o mesmo caminho: `EMAIL_TAKEN` aparece no campo de e-mail; `USERNAME_TAKEN` e o 422 do cenário `form-validation`, no de usuário. `INVALID_CREDENTIALS` mostra "E-mail ou senha incorretos. Confira os dados e tente novamente." e foca o e-mail.
+- O botão de envio fica desabilitado, com "Entrando…"/"Criando conta…", da requisição até o fim da navegação, e o handler ignora envios enquanto houver um pendente.
+- Sucesso (`useLogin`/`useRegister`, `src/hooks/use-auth.ts`): grava a `Session` no cache, salva o token, faz o merge do carrinho do visitante e navega para o `redirect` com `replace`. O resultado é anunciado ("Você entrou como Ana Ribeiro.").
+- Login social e "Esqueceu a senha?" seguem o padrão "em breve".
+
+### Merge do carrinho
+
+- Depois do login ou do cadastro, `mergeGuestCart()` chama `POST /api/cart/merge` se existir `kurio.guest-cart-id`. A resposta substitui `['user', userId, 'cart']`, a cotação do usuário é invalidada e o identificador do visitante é apagado.
+- Cada item de `adjustments` vira uma frase numa notificação ("Neon Vessel #552 (edição 1/50) foi ajustado para 1 unidade (estoque disponível)."); itens esgotados aparecem como removidos.
+- Se o merge falhar, o login continua válido, uma notificação informa a falha e o identificador do visitante é mantido para a próxima tentativa.
+
+### Rotas privadas
+
+- O layout `_authenticated` chama `loadSession` no `beforeLoad` a cada navegação privada. Sem sessão, redireciona com `replace` para `/login?redirect=<caminho atual com search e hash>`; se a sessão acabou de ser recusada, acrescenta `reason`. Falha transitória mostra "Não foi possível verificar sua sessão" com "Tentar novamente".
+- Os links privados do menu da conta usam `preload={false}`: o preload por intenção rodaria o `beforeLoad` e, com a sessão expirada, encerraria a sessão antes do clique, perdendo o destino.
+
+### Expiração durante a navegação
+
+- Qualquer 401 `SESSION_EXPIRED` com o token atual (consulta da sessão, `beforeLoad`, timer do `expiresAt` ou qualquer endpoint privado) encerra a sessão com motivo `expired`.
+- `SessionWatcher` (montado no layout raiz) reage ao encerramento: chama os handlers registrados em `onSessionInterrupted`, mostra a notificação "Sua sessão expirou." e, quando o router está ocioso, leva a `/login?redirect=<onde estava>&reason=expired` com `replace`. Se a expiração aconteceu num `beforeLoad` privado, o próprio redirecionamento da rota já leva ao login com o destino pretendido. Com motivo `invalid`, a navegação só acontece em rota privada.
+- A tela de login mostra o aviso da expiração em `role="alert"`, dentro do diálogo, porque fora dele a região `aria-live` global fica com `aria-hidden` enquanto o diálogo está aberto. Ao entrar de novo, o usuário volta ao `redirect`.
+- Preservação de contexto (`src/lib/session-resume.ts`), pronta para o checkout: `onSessionInterrupted(handler)` registra um callback executado antes do redirecionamento, e `saveResumeDraft(key, userId, data)`, `readResumeDraft(key, userId)` e `clearResumeDraft(key)` guardam o rascunho em `sessionStorage` com o dono. O rascunho só é lido pelo mesmo usuário; o logout apaga todos, e um login apaga os de outros usuários.
+
+### Logout e troca de usuário
+
+- "Sair" chama `POST /api/auth/logout` (que invalida o token e desconecta as carteiras) e, mesmo se a chamada falhar, encerra a sessão local. O resultado é anunciado ("Você saiu da sua conta.") e, se a tela atual é privada, o usuário vai para `/`.
+- `installSessionCacheIsolation` (`src/lib/session-cache.ts`, instalado em `main.tsx` antes do primeiro render) observa o snapshot de forma síncrona. A cada troca de token (login, logout, expiração, troca de usuário ou outra aba), cancela e remove todas as queries `['user', <usuário anterior>]` e `['guest']` e remove as mutations já concluídas. Nada do usuário anterior sobrevive no cache quando o próximo usuário renderiza.
+- A consulta da sessão confere se a resposta pertence ao `userId` da chave e falha caso contrário, para que uma resposta atrasada não grave dados de um usuário na chave de outro.
+- A ponte de tempo real reinicia o socket a cada troca de token: os listeners do socket anterior são removidos e o novo socket se autentica com o token novo (ver "Ciclo de vida e troca de sessão"). Os testes conferem pelo servidor simulado que, depois do logout, a única conexão é de visitante e, depois do login de Bruno, só existe a conexão de Bruno.
+- O evento `storage` propaga login e logout entre abas da mesma origem, com os mesmos efeitos.
+
+### Testes (`e2e/auth.spec.ts`)
+
+Validação dos dois formulários, conflito de e-mail no cadastro, credenciais inválidas, cadastro com redirect, login com retorno ao redirect (com search) e sessão após refresh, redirect externo descartado, rota privada sem login, Esc no diálogo com retorno do foco (desktop), expiração pelo painel durante a navegação com retomada, logout e troca ana → bruno sem vazamento (menu, textos, conexões do socket e header `Authorization` de todas as requisições) e merge do carrinho com ajuste.
 
 ## Carrinho
 
@@ -579,6 +625,8 @@ E-mail e telefone de contato do rodapé são fictícios e aparecem como texto, s
 - Tablet (768 px): não há frame. É usado o header desktop, com espaçamento reduzido entre os itens de navegação; a barra inferior aparece apenas abaixo de 768 px.
 - O item ativo do header segue a seção: "Início" na tela inicial e "Mercado" no catálogo, detalhes, carrinho, pagamento e pedidos. Nos frames de perfil e carteiras o Figma marca "Início"; aqui nenhum item fica ativo nessas telas.
 - "Mercado" leva à seção de catálogo da tela inicial (`/#catalogo`). O ícone de busca do header abre um campo de busca (popover) que leva ao catálogo com `q`. Os links de "Coleções" do rodapé aplicam o filtro de categoria correspondente.
+- O Figma não desenha o header logado (o frame de perfil ainda mostra "Entrar"). Logado, o botão "Entrar" dá lugar ao avatar (ou às iniciais) com o nome e um menu com Dados do perfil, Carteiras e Sair, nas cores do menu lateral do perfil. No mobile, a aba "Perfil" mostra o avatar e abre o mesmo menu.
+- Em `/login` e `/register` o item "Início" do header fica ativo, como no Figma, porque o diálogo aparece sobre a tela inicial.
 - O contador do carrinho no header só será exibido com dados reais do carrinho; o valor fixo do Figma não é reproduzido.
 - O ícone do botão central da barra mobile usa a cor Ink em vez de branco: branco sobre o laranja tem contraste de 2,45:1, abaixo do mínimo de 3:1 para elementos gráficos.
 - O rodapé não aparece nos frames mobile, que mostram apenas a primeira tela. No mobile e no tablet as colunas são reorganizadas em uma ou duas colunas.
@@ -610,6 +658,21 @@ E-mail e telefone de contato do rodapé são fictícios e aparecem como texto, s
 - "Mais desta coleção" mostra 5 cards por página no desktop, 3 no tablet e 2 no mobile, com os pontos calculados pela largura. Os itens vêm da coleção do NFT (`collection`), por isso diferem dos do Figma.
 - Os ícones de compartilhamento são links reais: LinkedIn e Twitter abrem em nova aba, e o e-mail usa `mailto:`, sempre com o endereço da página.
 - A lupa sobre a imagem (Figma) amplia a imagem num diálogo.
+
+### Login e cadastro
+
+- Os campos não têm rótulo visível no Figma, só placeholders. Cada campo tem um `label` visualmente oculto; os placeholders seguem o Figma.
+- O ícone de mostrar senha usa a cor Secondary em vez do marrom do Figma (Border Soft, cerca de 1,5:1), para atingir o contraste mínimo de 3:1 de elementos gráficos. É um botão com `aria-pressed`.
+- O diálogo desktop não escurece a tela inicial, como no Figma: o overlay é transparente, mas continua bloqueando a interação com o fundo. Fica a 160 px do topo, como no frame, e sobe em telas mais baixas.
+- No cadastro desktop, "Confirmar senha" não tem o ícone de olho, como no frame; no mobile, os dois campos de senha têm.
+- No frame mobile do cadastro, o placeholder "Nome de usuário" aparece centralizado, diferente dos demais; aqui todos ficam alinhados à esquerda.
+- O link "Crie uma conta"/"Entre" no rodapé da tela mobile é sublinhado, para não depender só do texto (no Figma tem a mesma cor do texto ao redor).
+- Mensagens de erro (Coral), resumo do erro e aviso de sessão expirada não têm frame e seguem os tokens.
+- A senha do cadastro tem uma dica só para leitores de tela ("pelo menos 8 caracteres, com letras e números"), sem texto visível, para não alterar a composição.
+
+### Mesclagem de classes
+
+- `cn` (`src/lib/utils.ts`) foi configurado com a escala tipográfica do projeto (`text-display`, `text-body`, `text-body-sm` etc.). Sem isso, essas classes eram tratadas como cor: em `cn('text-body', 'text-primary-foreground')`, uma das duas era descartada. O efeito visível era o texto claro nos botões primários (EXPLORAR, Aplicar, Entrar), que no Figma é escuro, e tamanhos de fonte declarados que não eram aplicados (por exemplo, a lista de categorias passou dos 16 px herdados para os 14 px declarados). Os componentes de `src/components/ui/` passaram a importar o `cn` configurado.
 
 ### Substituição de assets
 

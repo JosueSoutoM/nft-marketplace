@@ -1,11 +1,12 @@
 import { useCallback } from 'react'
-import { getRouteApi, useNavigate } from '@tanstack/react-router'
-import type { CatalogSearch } from '@/lib/catalog-search'
+import { useMatch, useNavigate } from '@tanstack/react-router'
+import { CATALOG_SEARCH_DEFAULTS, type CatalogSearch } from '@/lib/catalog-search'
 
-const homeRoute = getRouteApi('/')
+const BACKDROP_SEARCH: CatalogSearch = { ...CATALOG_SEARCH_DEFAULTS, category: [], network: [] }
 
 export function useCatalogSearch(): CatalogSearch {
-  return homeRoute.useSearch()
+  const homeMatch = useMatch({ from: '/', shouldThrow: false })
+  return homeMatch?.search ?? BACKDROP_SEARCH
 }
 
 type CatalogSearchPatch = Partial<Omit<CatalogSearch, 'page'>>

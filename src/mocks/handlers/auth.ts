@@ -7,7 +7,14 @@ import { getSettings, isScenario } from '../scenarios'
 import { apiRoute, readJsonBody, stringField } from './route'
 import { authenticate, readBearerToken, toSession } from './session-guard'
 import { clearWalletConnections } from './wallets'
-import { collectErrors, normalizeEmail, validateEmail, validateNewPassword, validateUsername } from './validation'
+import {
+  collectErrors,
+  normalizeEmail,
+  validateEmail,
+  validateNewPassword,
+  validatePasswordConfirmation,
+  validateUsername,
+} from './validation'
 
 async function authResponse(user: UserRecord, status: number): Promise<Response> {
   const { token, session } = await createSession(user.id, getSettings().sessionTtlSeconds)
@@ -26,11 +33,7 @@ const register = apiRoute('auth.register', async ({ request }) => {
     username: validateUsername(username),
     email: validateEmail(email),
     password: validateNewPassword(password),
-    passwordConfirmation: !passwordConfirmation
-      ? 'Confirme a senha.'
-      : passwordConfirmation !== password
-        ? 'As senhas não conferem.'
-        : null,
+    passwordConfirmation: validatePasswordConfirmation(password, passwordConfirmation),
   })
   if (fieldErrors) {
     return errorResponse(422, 'VALIDATION_ERROR', 'Revise os campos destacados.', fieldErrors)

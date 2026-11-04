@@ -1,5 +1,6 @@
 import type { QueryClient } from '@tanstack/react-query'
 import { createRootRouteWithContext, Outlet, useMatches } from '@tanstack/react-router'
+import { SessionWatcher } from '@/components/account/session-watcher'
 import { MobileTabBar } from '@/components/layout/mobile-tab-bar'
 import { NotFound } from '@/components/layout/not-found'
 import { SiteFooter } from '@/components/layout/site-footer'
@@ -36,6 +37,7 @@ function RootLayout() {
       </main>
       <SiteFooter />
       {!hideMobileTabBar && <MobileTabBar />}
+      <SessionWatcher />
       <LiveAnnouncer />
       <Toaster position="bottom-right" mobileOffset={{ bottom: reserveMobileBar ? 120 : 16 }} />
     </div>

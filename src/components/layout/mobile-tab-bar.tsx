@@ -1,5 +1,8 @@
 import { Link } from '@tanstack/react-router'
 import { Heart, House, ScanLine, ShoppingCart, User } from 'lucide-react'
+import { AccountMenu } from '@/components/account/account-menu'
+import { UserAvatar } from '@/components/account/user-avatar'
+import { useSession } from '@/hooks/use-session'
 import { cn } from '@/lib/utils'
 import { ComingSoonButton } from './coming-soon'
 import { useActiveSection } from './use-active-section'
@@ -7,6 +10,32 @@ import { useActiveSection } from './use-active-section'
 const tabClass =
   'flex size-12 items-center justify-center rounded-full text-text-secondary transition-colors hover:text-text-accent'
 const activeTabClass = 'text-text-accent'
+
+function ProfileTab({ active }: { active: boolean }) {
+  const session = useSession()
+
+  if (session.status === 'anonymous') {
+    return (
+      <Link
+        to="/profile"
+        aria-label="Perfil"
+        aria-current={active ? 'page' : undefined}
+        className={cn(tabClass, active && activeTabClass)}
+      >
+        <User className="size-6" fill="currentColor" aria-hidden="true" />
+      </Link>
+    )
+  }
+  return (
+    <AccountMenu user={session.user} side="top" triggerClassName={cn(tabClass, active && activeTabClass)}>
+      {session.user ? (
+        <UserAvatar user={session.user} className="size-8" />
+      ) : (
+        <User className="size-6" fill="currentColor" aria-hidden="true" />
+      )}
+    </AccountMenu>
+  )
+}
 
 export function MobileTabBar() {
   const section = useActiveSection()
@@ -46,14 +75,7 @@ export function MobileTabBar() {
               </Link>
             </li>
             <li>
-              <Link
-                to="/profile"
-                aria-label="Perfil"
-                aria-current={section === 'profile' ? 'page' : undefined}
-                className={cn(tabClass, section === 'profile' && activeTabClass)}
-              >
-                <User className="size-6" fill="currentColor" aria-hidden="true" />
-              </Link>
+              <ProfileTab active={section === 'profile'} />
             </li>
           </ul>
         </div>

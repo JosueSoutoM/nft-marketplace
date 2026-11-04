@@ -1,4 +1,5 @@
 import { useRouterState } from '@tanstack/react-router'
+import { isAuthPath } from '@/lib/redirect'
 
 export const CATALOG_HASH = 'catalogo'
 
@@ -11,7 +12,7 @@ export function useActiveSection(): Section | null {
   const pathname = useRouterState({ select: (state) => state.location.pathname })
   const hash = useRouterState({ select: (state) => state.location.hash })
 
-  if (pathname === '/') {
+  if (pathname === '/' || isAuthPath(pathname)) {
     return hash === CATALOG_HASH ? 'market' : 'home'
   }
   if (pathname === '/cart') {

@@ -7,7 +7,7 @@ export function ownerKey(userId: string | null): OwnerKey {
 }
 
 export const queryKeys = {
-  session: () => ['session'] as const,
+  session: (userId: string) => ['user', userId, 'session'] as const,
   networks: () => ['networks'] as const,
   nfts: {
     all: () => ['nfts'] as const,
